@@ -49,10 +49,20 @@ gene,chr,start,end,known_motif,pathogenic_expansion_number
 HTT,chr4,3074876,3074941,CAG,35
 ATXN8,chr13,70139383,70139428,CAG/TAG,73
 ```
+Loci with multiple known motifs can be separated by `/` in the `known_motif` column.
+
 
 ---
 
-## 🛠 Usage
+## 🛠 Change parameters
+You can change the motif-finding parameters by modifying the `__init__.py` file in the `config` directory. \
+The parameters include:
+- `min_repeat_length`: Minimum length of the repeat motif to be considered
+
+
+
+
+## 🧬 Usage
 
 <!-- ```bash
 python striker.py \
