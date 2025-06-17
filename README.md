@@ -1,4 +1,4 @@
-# STR Motif Analyzer
+# STRiker
 
 A Python tool for detecting short tandem repeats (STRs), analyzing motif patterns, and visualizing repeat number distributions in long read sequencing data (e.g., BAM files from Oxford Nanopore sequencing).
 
