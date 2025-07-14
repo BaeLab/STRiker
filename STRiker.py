@@ -57,22 +57,32 @@ def main_sequential(bam_file, csv_file, fasta_file):
                                                                                     min_length=REFERENCE_MINIMUM_MOTIF_LENGTH,
                                                                                     max_length=REFERENCE_MAXIMUM_MOTIF_LENGTH, 
                                                                                     consecutive_threshold=REFERENCE_CONSECUTIVE_THRESHOLD)
+        
+        # 회전 그룹핑은 나중에 apply_known_motif_v2에서 통합 처리하므로 여기서는 제거
 
+        # Reference motif 처리: 원본 motif를 그대로 유지하면서 known motif와 매핑
         new_consecutive_substrings = {}
-        # known motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
         known_motif_list = STR_regions_dict[gene]["known_motif"].split("/")
+        
         for motif, count in consecutive_substrings.items():
+            final_motif = motif  # 기본적으로 원본 motif 유지
+            
+            # known motif와 회전해서 일치하는 경우에만 매핑
             for known_motif in known_motif_list:
-                if motif in analyze_func_pysam.rotate_string(known_motif):
-                    # known motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
-                    motif = known_motif
+                if motif in analyze_func_pysam.rotate_string_set(known_motif):
+                    final_motif = known_motif
                     break
-            new_consecutive_substrings[motif] = count
+            
+            # 매핑된 motif로 카운트 합산
+            if final_motif in new_consecutive_substrings:
+                new_consecutive_substrings[final_motif] += count
+            else:
+                new_consecutive_substrings[final_motif] = count
+        
         consecutive_substrings = new_consecutive_substrings
 
-
+        # Reference motif dictionary에 저장
         for motif, count in consecutive_substrings.items():
-            
             reference_motif_dict_consc[gene][motif] = count
             reference_motif_dict_total[gene][motif] = seq.count(motif)
         
@@ -84,7 +94,7 @@ def main_sequential(bam_file, csv_file, fasta_file):
     # motif_dict는 {gene: {motif: [count, ...], ...}, ...} 형태
     motif_dict = analyze_func_pysam.filter_motif_dict(motif_dict, MINIMUM_MOTIF_COVERAGE, reference_motif_dict_consc)
     # motif중에 known_motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
-    motif_dict = analyze_func_pysam.apply_known_motif(motif_dict, STR_regions_dict)
+    motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
     
     pattern_dict, consecutive_repeat_results, total_repeat_results = analyze_func_pysam.process_linesV2(bam_file, STR_regions_dict, motif_dict)
     pattern_dict = analyze_func_pysam.simplify_pattern_dict(pattern_dict, motif_dict)
@@ -125,6 +135,25 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
         return
 
     all_patterns = list(sorted(motif_dict[gene].keys(), key=lambda x: (len(x), x)))
+    
+    # 디버깅: motif_dict에 있는 motif들과 실제 pattern에서 사용되는 motif들 비교
+    pattern_motifs = set()
+    for read in pattern_dict[gene]:
+        for pattern, count in read:
+            pattern_motifs.add(pattern)
+    
+    print(f"[DEBUG {gene}] motif_dict에 있는 motifs: {sorted(motif_dict[gene].keys(), key=len)}")
+    print(f"[DEBUG {gene}] pattern에서 사용된 motifs: {sorted(pattern_motifs, key=len)}")
+    
+    missing_in_pattern = set(motif_dict[gene].keys()) - pattern_motifs
+    only_in_pattern = pattern_motifs - set(motif_dict[gene].keys())
+    
+    if missing_in_pattern:
+        print(f"[DEBUG {gene}] ⚠️  motif_dict에만 있는 motifs (plot에서 누락): {sorted(missing_in_pattern, key=len)}")
+    if only_in_pattern:
+        print(f"[DEBUG {gene}] ⚠️  pattern에만 있는 motifs: {sorted(only_in_pattern, key=len)}")
+    if not missing_in_pattern and not only_in_pattern:
+        print(f"[DEBUG {gene}] ✅ motif_dict와 pattern이 완전히 일치!")
     colormap = "Paired"
     if len(all_patterns) > 12:
         colormap = "tab20"
