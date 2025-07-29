@@ -58,7 +58,6 @@ def main_sequential(bam_file, csv_file, fasta_file):
                                                                                     max_length=REFERENCE_MAXIMUM_MOTIF_LENGTH, 
                                                                                     consecutive_threshold=REFERENCE_CONSECUTIVE_THRESHOLD)
         
-        # 회전 그룹핑은 나중에 apply_known_motif_v2에서 통합 처리하므로 여기서는 제거
 
         # Reference motif 처리: 원본 motif를 그대로 유지하면서 known motif와 매핑
         new_consecutive_substrings = {}
@@ -141,18 +140,18 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
         for pattern, count in read:
             pattern_motifs.add(pattern)
     
-    print(f"[DEBUG {gene}] motif_dict에 있는 motifs: {sorted(motif_dict[gene].keys(), key=len)}")
+    # print(f"[DEBUG {gene}] motif_dict에 있는 motifs: {sorted(motif_dict[gene].keys(), key=len)}")
     # print(f"[DEBUG {gene}] pattern에서 사용된 motifs: {sorted(pattern_motifs, key=len)}")
     
-    missing_in_pattern = set(motif_dict[gene].keys()) - pattern_motifs
-    only_in_pattern = pattern_motifs - set(motif_dict[gene].keys())
+    # missing_in_pattern = set(motif_dict[gene].keys()) - pattern_motifs
+    # only_in_pattern = pattern_motifs - set(motif_dict[gene].keys())
     
-    if missing_in_pattern:
-        print(f"[DEBUG {gene}] ⚠️  motif_dict에만 있는 motifs (plot에서 누락): {sorted(missing_in_pattern, key=len)}")
-    # if only_in_pattern:
-    #     print(f"[DEBUG {gene}] ⚠️  pattern에만 있는 motifs: {sorted(only_in_pattern, key=len)}")
-    if not missing_in_pattern and not only_in_pattern:
-        print(f"[DEBUG {gene}] ✅ motif_dict와 pattern이 완전히 일치!")
+    # if missing_in_pattern:
+    #     print(f"[DEBUG {gene}] ⚠️  motif_dict에만 있는 motifs (plot에서 누락): {sorted(missing_in_pattern, key=len)}")
+    # # if only_in_pattern:
+    # #     print(f"[DEBUG {gene}] ⚠️  pattern에만 있는 motifs: {sorted(only_in_pattern, key=len)}")
+    # if not missing_in_pattern and not only_in_pattern:
+    #     print(f"[DEBUG {gene}] ✅ motif_dict와 pattern이 완전히 일치!")
     # colormap = "Paired"
     colormap = "Accent"
     if len(all_patterns) > 12:
@@ -308,7 +307,7 @@ if __name__ == "__main__":
     
     # 디버깅 정보를 파일로 저장
     output_folder = os.path.dirname(bam_file)
-    analyze_func_pysam.save_debug_info_to_file(output_folder, bam_file, motif_dict, pattern_dict)
+    # analyze_func_pysam.save_debug_info_to_file(output_folder, bam_file, motif_dict, pattern_dict)
     save_gene_plots_with_heatmap_v2(
         pattern_dict,
         motif_dict,
@@ -316,5 +315,3 @@ if __name__ == "__main__":
         STR_regions_dict=STR_regions_dict,
         input_file=bam_file
     )
-    # print("Sample name:", os.path.basename(bam_file))
-    # print("Gene panel output saved to:", os.path.join(os.path.dirname(bam_file), "gene_panel_output"))
