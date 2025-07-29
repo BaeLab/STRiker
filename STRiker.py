@@ -134,24 +134,6 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
     # 재현성을 위해 길이와 알파벳 순으로 정렬
     all_patterns = list(sorted(motif_dict[gene].keys(), key=lambda x: (len(x), x)))
     
-    # 디버깅: motif_dict에 있는 motif들과 실제 pattern에서 사용되는 motif들 비교
-    pattern_motifs = set()
-    for read in pattern_dict[gene]:
-        for pattern, count in read:
-            pattern_motifs.add(pattern)
-    
-    # print(f"[DEBUG {gene}] motif_dict에 있는 motifs: {sorted(motif_dict[gene].keys(), key=len)}")
-    # print(f"[DEBUG {gene}] pattern에서 사용된 motifs: {sorted(pattern_motifs, key=len)}")
-    
-    # missing_in_pattern = set(motif_dict[gene].keys()) - pattern_motifs
-    # only_in_pattern = pattern_motifs - set(motif_dict[gene].keys())
-    
-    # if missing_in_pattern:
-    #     print(f"[DEBUG {gene}] ⚠️  motif_dict에만 있는 motifs (plot에서 누락): {sorted(missing_in_pattern, key=len)}")
-    # # if only_in_pattern:
-    # #     print(f"[DEBUG {gene}] ⚠️  pattern에만 있는 motifs: {sorted(only_in_pattern, key=len)}")
-    # if not missing_in_pattern and not only_in_pattern:
-    #     print(f"[DEBUG {gene}] ✅ motif_dict와 pattern이 완전히 일치!")
     # colormap = "Paired"
     colormap = "Accent"
     if len(all_patterns) > 12:
@@ -203,39 +185,7 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
     ax.legend(handles=legend_elements, title="Pattern",bbox_to_anchor=(1.0,1.0), loc='upper left', ncol=1, frameon=True,
               fontsize=4, title_fontsize=5)
 
-    # 범례는 따로 처리 (원하면 첫 페이지만 넣을 수도 있음)
-def save_gene_plots_with_heatmap(pattern_dict, motif_dict, bam_file, STR_regions_dict, input_file, read_threshold=5):
-    gene_list = list(motif_dict.keys())
-    from matplotlib.backends.backend_pdf import PdfPages
-    import matplotlib.pyplot as plt
-    output_folder = os.path.join(os.path.dirname(input_file), "gene_panel_output")
-    os.makedirs(output_folder, exist_ok=True)
-    plots_per_page = 4
-    rows, cols = 4, 2
-    figsize = (8.27, 11.69)
-    filename = os.path.join(output_folder, f"{os.path.basename(input_file)}_gene_panel_output.pdf")
-    with PdfPages(filename) as pdf:
-        for page_start in range(0, len(gene_list), plots_per_page):
-            fig, axes = plt.subplots(rows, cols, figsize=figsize, constrained_layout=True)
-            axes = axes.flatten()
-
-            for row in range(plots_per_page):
-                gene_index = page_start + row
-                if gene_index >= len(gene_list):
-                    axes[row*2].axis('off')
-                    axes[row*2+1].axis('off')
-                    continue
-
-                gene = gene_list[gene_index]
-
-                # 왼쪽: heatmap
-                plot_pattern(axes[row*2], pattern_dict, motif_dict, gene, read_threshold=read_threshold)
-                # 오른쪽: read length KDE
-                analyze_func_pysam.show_kde_v2(axes[row*2+1], bam_file, STR_regions_dict, gene, read_threshold=read_threshold)
-
-            pdf.savefig(fig)
-            plt.close(fig)
-
+    
 
 
 def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regions_dict, input_file, read_threshold=5):
@@ -248,7 +198,7 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
     output_folder = os.path.join(os.path.dirname(input_file), "gene_panel_output")
     os.makedirs(output_folder, exist_ok=True)
 
-    rows, cols = 4, 3
+    rows, cols = 4, 2
     plots_per_page = rows  # gene per page
     figsize = (11.69, 11.69)  # A4 landscape
     filename = os.path.join(output_folder, f"{os.path.basename(input_file)}_gene_panel_output.pdf")
@@ -274,7 +224,7 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
                 analyze_func_pysam.show_kde_v2(axes[row, 1], bam_file, STR_regions_dict, gene, read_threshold=read_threshold)
 
                 # 오른쪽: Repeat Number Histogram
-                analyze_func_pysam.plot_repeat_number_distribution(axes[row, 2], bam_file, STR_regions_dict, gene, read_threshold=read_threshold)
+                # analyze_func_pysam.plot_repeat_number_distribution(axes[row, 2], bam_file, STR_regions_dict, gene, read_threshold=read_threshold)
 
             pdf.savefig(fig)
             plt.close(fig)
@@ -303,11 +253,9 @@ if __name__ == "__main__":
 
 
     pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results= main_sequential(bam_file, csv_file, fasta_file=fasta_file)
-    STR_regions_dict, depth_dict = load_csv_data(csv_file)
+    STR_regions_dict, _ = load_csv_data(csv_file)
     
-    # 디버깅 정보를 파일로 저장
     output_folder = os.path.dirname(bam_file)
-    # analyze_func_pysam.save_debug_info_to_file(output_folder, bam_file, motif_dict, pattern_dict)
     save_gene_plots_with_heatmap_v2(
         pattern_dict,
         motif_dict,

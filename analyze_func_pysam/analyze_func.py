@@ -84,51 +84,6 @@ def line_validity_check(line: str) -> bool:
     return True
 
 
-def is_over_patho_range(patho_range:str, repeat_count:int) -> bool:
-    """
-    repeat count가 patho_range에 해당하는지 알아본다.
-    """
-    patho_range = patho_range.strip()
-    if "-" in patho_range:
-        start, end = map(int, patho_range.split("-"))
-        if start <= repeat_count <= end:
-            return True
-        else:
-            return False
-    
-    else:
-        if ">" in patho_range:
-            if repeat_count > int(patho_range.split(">")[1].strip()):
-                return True
-            else:
-                return False
-        elif "<" in patho_range:
-            if repeat_count < int(patho_range.split("<")[1].strip()):
-                return True
-            else:
-                return False
-        else:
-            if repeat_count == int(patho_range):
-                return True
-            else:
-                return False
-            
-
-def process_patho_range(patho_range:str) -> Tuple[int]:
-    """
-    patho_range를 받아서 start, end로 나눠서 반환한다.
-    """
-    patho_range = patho_range.strip()
-    if "-" in patho_range:
-        start, end = map(int, patho_range.split("-"))
-        return start, end
-    else:
-        if ">" in patho_range:
-            return int(patho_range.split(">")[1].strip()), None
-        elif "<" in patho_range:
-            return None, int(patho_range.split("<")[1].strip())
-        else:
-            return int(patho_range), None
 
 
 def analyze_pattern_occurrencesV6_option1(long_str:str, motifs:list) -> List[Tuple[str,int]]:
@@ -192,96 +147,6 @@ def analyze_pattern_occurrencesV6_option1(long_str:str, motifs:list) -> List[Tup
     return result
 
 
-def analyze_pattern_occurrencesV6_option2(long_str:str, motifs:list) -> List[Tuple[str,int]]:
-    """
-    옵션 2: 앞뒤 컨텍스트를 보고 반복 패턴이 가장 잘 맞는 motif 선택
-    """
-    i = 0
-    result = []
-    
-    # motifs를 길이가 긴 순으로 정렬
-    motifs_sorted = sorted(motifs, key=lambda x: (-len(x), x))
-    
-    # '연속 미매칭' 문자들을 임시로 저장할 버퍼
-    unmatched_buffer = []
-    
-    def get_context_score(motif, position, window_size=20):
-        """주변 컨텍스트에서 해당 motif의 반복 점수 계산"""
-        if position < 0 or position >= len(long_str):
-            return 0
-        
-        # 앞뒤 window_size만큼의 컨텍스트 추출
-        start = max(0, position - window_size)
-        end = min(len(long_str), position + window_size + len(motif))
-        context = long_str[start:end]
-        
-        # 컨텍스트에서 해당 motif가 몇 번 연속으로 등장하는지 계산
-        motif_len = len(motif)
-        max_consecutive = 0
-        current_consecutive = 0
-        
-        for j in range(0, len(context) - motif_len + 1, motif_len):
-            if context[j:j+motif_len] == motif:
-                current_consecutive += 1
-                max_consecutive = max(max_consecutive, current_consecutive)
-            else:
-                current_consecutive = 0
-        
-        return max_consecutive
-    
-    while i < len(long_str):
-        matched = False
-        matched_motif = None
-        best_score = 0
-        
-        # 현재 위치에서 매칭 가능한 모든 motif 찾기
-        possible_motifs = []
-        for m in motifs_sorted:
-            if long_str.startswith(m, i):
-                possible_motifs.append(m)
-        
-        if possible_motifs:
-            # 각 motif에 대해 컨텍스트 점수 계산
-            for motif in possible_motifs:
-                score = get_context_score(motif, i)
-                # 점수가 같으면 더 긴 motif 우선, 점수가 다르면 점수가 높은 것 우선
-                if score > best_score or (score == best_score and (matched_motif is None or len(motif) > len(matched_motif))):
-                    best_score = score
-                    matched_motif = motif
-            
-            matched = True
-        
-        if matched:
-            # 미매칭 버퍼 처리
-            if unmatched_buffer:
-                unmatched_str = "".join(unmatched_buffer)
-                if result and result[-1][0] == unmatched_str:
-                    result[-1] = (unmatched_str, result[-1][1] + 1)
-                else:
-                    result.append((unmatched_str, 1))
-                unmatched_buffer = []
-            
-            # 매칭된 motif 추가
-            if result and result[-1][0] == matched_motif:
-                result[-1] = (matched_motif, result[-1][1] + 1)
-            else:
-                result.append((matched_motif, 1))
-            
-            i += len(matched_motif)
-        else:
-            # 매칭 실패시 unmatched_buffer에 추가
-            unmatched_buffer.append(long_str[i])
-            i += 1
-    
-    # 마지막 unmatched_buffer 처리
-    if unmatched_buffer:
-        unmatched_str = "".join(unmatched_buffer)
-        if result and result[-1][0] == unmatched_str:
-            result[-1] = (unmatched_str, result[-1][1] + 1)
-        else:
-            result.append((unmatched_str, 1))
-    
-    return result
 
 
 def analyze_pattern_occurrencesV6(long_str:str, motifs:list) -> List[Tuple[str,int]]:
@@ -304,72 +169,6 @@ def samfile_process(line:str) -> Tuple[str]:
 
 
 
-def find_efficient_repeated_substrings(
-    string, 
-    min_length=2, 
-    max_length=10, 
-    repeat_threshold=10  # 새로 추가된 반복 횟수 threshold
-):
-    """
-    문자열에서 반복되는 부분 문자열을 효율적으로 찾는 함수
-    
-    Args:
-    string (str): 입력 문자열
-    min_length (int): 최소 부분 문자열 길이
-    max_length (int): 최대 부분 문자열 길이
-    repeat_threshold (int): 최소 반복 횟수 threshold
-    
-    Returns:
-    dict: 고유한 반복 부분 문자열과 반복 횟수
-    """
-    # 부분 문자열 위치를 저장할 해시 맵
-    substring_positions = {}
-    
-    # 고유 문자 구성을 추적할 집합
-    unique_char_compositions = set()
-    
-    # 결과 저장 딕셔너리
-    repeated_substrings = {}
-    
-    # 부분 문자열의 길이별 순회
-    for length in range(min_length, max_length + 1):
-        # 부분 문자열 위치 초기화
-        substring_positions.clear()
-        
-        # 문자열의 모든 부분 문자열 탐색
-        for i in range(len(string) - length + 1):
-            substring = string[i:i+length]
-            
-            # 부분 문자열의 고유한 문자 구성 생성
-            char_composition = tuple(sorted((char, substring.count(char)) for char in set(substring)))
-            
-            # 이 부분 문자열의 모든 위치 저장
-            if substring not in substring_positions:
-                substring_positions[substring] = []
-            substring_positions[substring].append(i)
-        
-        # threshold 이상 반복되는 부분 문자열 찾기
-        for substring, positions in substring_positions.items():
-            # threshold 이상 반복되는지 확인
-            if len(positions) >= repeat_threshold:
-                # 새로운 문자 구성인지 확인
-                char_composition = tuple(sorted((char, substring.count(char)) for char in set(substring)))
-                
-                # 이미 본 문자 구성이 아니면 추가
-                if char_composition not in unique_char_compositions:
-                    # 다른 부분 문자열에 완전히 포함되지 않도록 확인
-                    is_unique = True
-                    for existing in repeated_substrings.keys():
-                        if substring != existing and substring in existing:
-                            is_unique = False
-                            break
-                    
-                    # 고유한 부분 문자열이면 추가
-                    if is_unique:
-                        repeated_substrings[substring] = len(positions)
-                        unique_char_compositions.add(char_composition)
-    
-    return repeated_substrings
 
 
 
@@ -470,53 +269,6 @@ def canonical_rotation(s):
     # 이렇게 하면 긴 motif도 제대로 처리되고, 원본 형태가 유지됨
     return s
 
-def find_consecutive_repeated_substrings_with_rotation_optimized(string, min_length=2, max_length=10, consecutive_threshold=10) -> dict:
-    """
-    회전 불변성을 고려하여 연속으로 반복되는 부분 문자열을 찾는 함수의 최적화 버전.
-    
-    기존에는 각 후보 부분 문자열마다 전체 문자열에 대해 정규표현식 검색을 수행했으나,
-    여기서는 슬라이딩 윈도우 방식으로 한 번의 전체 스캔으로 후보에 해당하는 연속 구간을 탐색합니다.
-    
-    Args:
-        string (str): 검색할 전체 문자열.
-        min_length (int): 후보 부분 문자열의 최소 길이.
-        max_length (int): 후보 부분 문자열의 최대 길이.
-        consecutive_threshold (int): 연속 반복 최소 횟수.
-        
-    Returns:
-        dict: {canonical_rotation: 최대 반복 횟수} 형태의 결과.
-    """
-    consecutive_substrings = {}
-    checked = set()  # 이미 canonical rotation을 처리한 후보 저장
-    n = len(string)
-    
-    for L in range(min_length, max_length + 1):
-        # 시작 인덱스: 최소 consecutive_threshold개의 블록을 포함할 수 있는 범위
-        for start in range(n - L * consecutive_threshold + 1):
-            candidate = string[start:start+L]
-            can = canonical_rotation(candidate)
-            if can in checked:
-                continue
-            checked.add(can)
-            double_can = can + can  # 회전 여부 판별을 위한 미리 계산된 문자열
-            max_repeats = 0
-            i = 0
-            while i <= n - L:
-                current_block = string[i:i+L]
-                # current_block이 can의 회전인지 판별 (회전이면 double_can 안에 포함됨)
-                if current_block in double_can:
-                    count = 0
-                    # 연속 반복 구간 계산
-                    while i <= n - L and string[i:i+L] in double_can:
-                        count += 1
-                        i += L
-                    max_repeats = max(max_repeats, count)
-                else:
-                    i += 1
-            if max_repeats >= consecutive_threshold:
-                consecutive_substrings[can] = max_repeats
-                
-    return consecutive_substrings
 
 
 
@@ -668,52 +420,6 @@ def make_pattern_dict(bam_file, STR_regions_dict, motif_dict):
     return (pattern_dict, consecutive_repeat_results, total_repeat_results)
 
 
-def process_linesV2_option2(bam_file, STR_regions_dict, motif_dict):
-    """
-    옵션 2: 컨텍스트 기반 패턴 매칭을 사용한 버전
-    """
-    bam_hdl = pysam.AlignmentFile(bam_file, "rb")
-    pattern_dict = defaultdict(list)
-    consecutive_repeat_results = defaultdict(lambda: defaultdict(list))
-    total_repeat_results = defaultdict(lambda: defaultdict(list))
-
-    for gene in STR_regions_dict.keys():
-        chrom = STR_regions_dict[gene]["chrom"]
-        start = STR_regions_dict[gene]["start"]
-        end = STR_regions_dict[gene]["end"]
-
-        # 조금 넓은 부분 span해서 본다
-        start = start - LEFT_TRIM
-        end = end + RIGHT_TRIM
-        
-        for read in bam_hdl.fetch(chrom, start, end):
-            if not is_primary_and_mapped(read):
-                continue
-            read_seq = extract_sequence_with_deletionV2(read, start, end)
-            motifs = list(motif_dict.get(gene, {}).keys())
-            
-            # 옵션 2 방식 사용 (컨텍스트 기반)
-            pattern_list = analyze_pattern_occurrencesV6_option2(read_seq, motifs)
-
-            pattern_dict[gene].append(pattern_list)
-            # 범위내에 있는 read의 motif total갯수를 셈.
-            # 재현성을 위해 정렬된 순서로 처리
-            for motif, count in sorted(analyze_pattern_total_occurences(read_seq, motifs).items(), key=lambda x: x[0]):
-                total_repeat_results[gene][motif].append(count)
-
-            # consecutive repeat에 대해 각 리드별 motif의 연속 등장 최댓값 저장
-            # 재현성을 위해 정렬된 순서로 처리
-            for motif, max_consec_repeat_num in sorted(get_maximum_consecutive_repeats(pattern_list, motifs).items(), key=lambda x: x[0]):
-                consecutive_repeat_results[gene][motif].append(max_consec_repeat_num)
-        
-    bam_hdl.close()
-    # sorting
-    get_length = lambda x: sum(len(seq) * count for seq, count in x)
-    pattern_dict = dict(sorted(pattern_dict.items(), key=lambda x: x[0], reverse=False))
-    for gene in pattern_dict.keys():
-        pattern_dict[gene].sort(key=get_length, reverse=True)
-    
-    return (pattern_dict, consecutive_repeat_results, total_repeat_results)
 
 
 
@@ -745,33 +451,6 @@ def filter_motif_dict(motif_dict, minimum_motif_coverage, reference_motif_dict):
 
 
 
-def apply_known_motif(motif_dict, STR_regions_dict):
-    """
-    motif_dict[gene]이 {motif: value} 형태일 때,
-    motif가 known_motif의 회전형이면 해당 known_motif로 key를 바꿔서 값을 합산합니다.
-    """
-    new_motif_dict = {}
-
-    # 재현성을 위해 정렬된 순서로 처리
-    for gene in sorted(motif_dict.keys()):
-        motif_data = motif_dict[gene]
-        known_motif_list = STR_regions_dict[gene]["known_motif"].split("/")
-        new_motifs = {}
-
-        # 길이 우선 정렬 (긴 motif 우선 처리)
-        for motif, value in sorted(motif_data.items(), key=lambda x: (-len(x[0]), -x[1], x[0])):
-            replaced = False
-            for known_motif in known_motif_list:
-                if motif in rotate_string_set(known_motif):
-                    new_motifs[known_motif] = new_motifs.get(known_motif, 0) + value
-                    replaced = True
-                    break
-            if not replaced:
-                new_motifs[motif] = new_motifs.get(motif, 0) + value
-        
-        new_motif_dict[gene] = new_motifs
-
-    return new_motif_dict
 
 def apply_known_motif_v2(motif_dict, STR_regions_dict):
     """
@@ -785,8 +464,6 @@ def apply_known_motif_v2(motif_dict, STR_regions_dict):
         if not motif_data:
             continue
             
-        # print(f"[GROUPING {gene}] 처리 전 motifs: {sorted(motif_data.keys(), key=len)}")
-            
         known_motif_list = []
         if (gene in STR_regions_dict and 
             STR_regions_dict[gene]["known_motif"] != "None"):
@@ -798,29 +475,23 @@ def apply_known_motif_v2(motif_dict, STR_regions_dict):
         # 1단계: known motif 우선 처리
         for known_motif in known_motif_list:
             total_count = 0
-            mapped_motifs = []
             known_rotations = rotate_string_set(known_motif)
             
             # 길이 우선 정렬 (긴 motif 우선 처리)
             for motif, count in sorted(motif_data.items(), key=lambda x: (-len(x[0]), -x[1], x[0])):
                 if motif in known_rotations and motif not in processed_motifs:
                     total_count += count
-                    mapped_motifs.append(motif)
                     processed_motifs.add(motif)
             
             if total_count > 0:
                 new_motif_data[known_motif] = total_count
-                # print(f"[GROUPING {gene}] Known motif '{known_motif}' ← {mapped_motifs} (total: {total_count})")
 
         # 2단계: 남은 motif들의 회전 그룹핑
         remaining_motifs = {k: v for k, v in motif_data.items() if k not in processed_motifs}
         if remaining_motifs:
-            # print(f"[GROUPING {gene}] 회전 그룹핑 대상: {sorted(remaining_motifs.keys(), key=len)}")
             grouped_remaining = group_rotational_motifs(remaining_motifs, known_motifs=known_motif_list)
-            # print(f"[GROUPING {gene}] 회전 그룹핑 결과: {sorted(grouped_remaining.keys(), key=len)}")
             new_motif_data.update(grouped_remaining)
         
-        # print(f"[GROUPING {gene}] 최종 결과: {sorted(new_motif_data.keys(), key=len)}")
         motif_dict[gene] = new_motif_data
 
     return motif_dict
@@ -1125,85 +796,6 @@ def save_motif_as_xlsx(
                            ])
     wb.save(output_file)
     print("Saved as", output_file)
-    
-    # TXT 파일로도 저장 (디버깅용)
-    # txt_file = output_file.replace('.xlsx', '_debug.txt')
-    # with open(txt_file, 'w') as f:
-    #     f.write('\t'.join(header) + '\n')
-    #     # 재현성을 위해 정렬된 순서로 처리
-    #     for gene in sorted(motif_dict.keys()):
-    #         motifs = motif_dict[gene]
-    #         for motif in sorted(motifs.keys()):
-    #             count = motifs[motif]
-    #             if motif in reference_motif_dict_consc.get(gene, {}):
-    #                 motif_type = "Reference"
-    #                 ref_total = reference_motif_dict_total.get(gene, {}).get(motif, 0)
-                    
-    #                 # 안전한 데이터 접근
-    #                 total_data = total_repeat_results.get(gene, {}).get(motif, [0])
-    #                 consc_data = consecutive_repeat_result.get(gene, {}).get(motif, [0])
-                    
-    #                 # 리스트가 비어있으면 [0]으로 설정
-    #                 if not total_data:
-    #                     total_data = [0]
-    #                 if not consc_data:
-    #                     consc_data = [0]
-                    
-    #                 read_total_mean = statistics.mean(total_data)
-    #                 ref_consc = reference_motif_dict_consc.get(gene, {}).get(motif, 0)
-    #                 read_consc_mean = statistics.mean(consc_data)
-    #                 depth = depth_dict.get(gene, 0)
-    #                 read_total_max = max(total_data)
-    #                 read_total_min = min(total_data)
-    #                 read_total_median = statistics.median(total_data)
-    #                 read_total_variance = statistics.variance(total_data) if len(total_data) > 1 else 0
-    #                 read_total_stdev = statistics.stdev(total_data) if len(total_data) > 1 else 0
-    #                 read_consc_max = max(consc_data)
-    #                 read_consc_min = min(consc_data)
-    #                 read_consc_median = statistics.median(consc_data)
-    #                 read_consc_variance = statistics.variance(consc_data) if len(consc_data) > 1 else 0
-    #                 read_consc_stdev = statistics.stdev(consc_data) if len(consc_data) > 1 else 0
-                    
-    #                 row = [gene, motif_type, motif, ref_total, read_total_mean, ref_consc, read_consc_mean, depth,
-    #                        read_total_max, read_total_min, read_total_median, read_total_variance, read_total_stdev,
-    #                        read_consc_max, read_consc_min, read_consc_median, read_consc_variance, read_consc_stdev]
-    #                 f.write('\t'.join(map(str, row)) + '\n')
-    #             else:
-    #                 motif_type = "De novo"
-    #                 ref_total = "Under threshold" 
-                    
-    #                 # 안전한 데이터 접근 (De novo motif용)
-    #                 total_data = total_repeat_results.get(gene, {}).get(motif, [0])
-    #                 consc_data = consecutive_repeat_result.get(gene, {}).get(motif, [0])
-                    
-    #                 # 리스트가 비어있으면 [0]으로 설정
-    #                 if not total_data:
-    #                     total_data = [0]
-    #                 if not consc_data:
-    #                     consc_data = [0]
-                    
-    #                 read_total_mean = statistics.mean(total_data)
-    #                 ref_consc = "Underthreshold" 
-    #                 read_consc_mean = statistics.mean(consc_data)
-    #                 depth = depth_dict.get(gene, 0)
-    #                 read_total_max = max(total_data)
-    #                 read_total_min = min(total_data)
-    #                 read_total_median = statistics.median(total_data)
-    #                 read_total_variance = statistics.variance(total_data) if len(total_data) > 1 else 0
-    #                 read_total_stdev = statistics.stdev(total_data) if len(total_data) > 1 else 0
-    #                 read_consc_max = max(consc_data)
-    #                 read_consc_min = min(consc_data)
-    #                 read_consc_median = statistics.median(consc_data)
-    #                 read_consc_variance = statistics.variance(consc_data) if len(consc_data) > 1 else 0
-    #                 read_consc_stdev = statistics.stdev(consc_data) if len(consc_data) > 1 else 0
-                    
-    #                 row = [gene, motif_type, motif, ref_total, read_total_mean, ref_consc, read_consc_mean, depth,
-    #                        read_total_max, read_total_min, read_total_median, read_total_variance, read_total_stdev,
-    #                        read_consc_max, read_consc_min, read_consc_median, read_consc_variance, read_consc_stdev]
-    #                 f.write('\t'.join(map(str, row)) + '\n')
-    
-    # print("Debug TXT file saved as", txt_file)
-    # return None
 
 
 def save_debug_info_to_file(output_folder, bam_file, motif_dict, pattern_dict):
@@ -1270,46 +862,6 @@ def analyze_pattern_total_occurences(read_seq: str, motifs: list) -> List[Tuple[
         result[motif] = count
     return result
 
-def extract_sequence_with_deletion(read, target_start, target_end):
-    """
-    주어진 read에서 target 범위에 해당하는 시퀀스를 추출하되,
-    reference에서 deletion인 부분은 -로 채워줌.
-    align시작 위치가 target_start보다 크면 앞부분에 *로 채워줌
-    """
-    result = ""
-    query_pos = 0
-    ref_pos = read.reference_start
-
-    for op, length in read.cigartuples:
-        if op  in (0, 7, 8):  # M , =, X (match or mismatch)
-            for i in range(length):
-                if target_start <= ref_pos < target_end:
-                    result += read.query_sequence[query_pos]
-                query_pos += 1
-                ref_pos += 1
-        elif op == 1:  # I (insertion, reference에는 없음)
-            query_pos += length  # 그냥 건너뜀
-        elif op == 2:  # D (deletion, read에는 없음)
-            for i in range(length):
-                if target_start <= ref_pos < target_end:
-                    result += "-"
-                ref_pos += 1
-        elif op == 4:  # soft clipping
-            query_pos += length
-        elif op == 5:  # hard clipping (read에 없음)
-            continue
-        else:
-            # 필요하면 다른 CIGAR 연산 처리
-            pass
-
-        # 종료 조건: reference 범위를 초과하면 중단
-        if ref_pos >= target_end:
-            break
-    # 만약 read의 시작 위치가 target_start보다 크면 앞부분에 *로 채움
-    if read.reference_start > target_start:
-        result = "*" * (read.reference_start - target_start) + result
-
-    return result
 
 def get_maximum_consecutive_repeats(pattern_list: list, motifs: list) -> Dict[str, int]:
     """
@@ -1440,7 +992,8 @@ def show_kde_v2(ax, bam_file, STR_regions_dict, gene, read_threshold):
     ax.set_ylabel("Frequency", fontsize=4)
     ax.set_title(f"Read Length Distribution for {gene}", fontsize=7)
     ax.tick_params(axis='both', which='major', labelsize=4)
-    ax.legend(handles=legend_elements, fontsize=4, loc='upper right', title_fontsize=4)
+    ax.legend(handles=legend_elements, bbox_to_anchor=(1.0,1.0), loc='upper left', ncol=1, frameon=True,
+              fontsize=4, title_fontsize=4)
 
 
 def plot_repeat_number_distribution(ax, bam_file, STR_regions_dict, gene, read_threshold):
@@ -1693,7 +1246,6 @@ def group_rotational_motifs(motif_dict, known_motifs=None):
         
         # 회전 그룹 내에서 가장 적합한 motif 찾기
         best_motif = motif
-        best_count = count
         total_count = count
         group_members = [(motif, count)]
         
@@ -1713,11 +1265,6 @@ def group_rotational_motifs(motif_dict, known_motifs=None):
         
         # 대표 motif와 총 카운트로 저장
         grouped_result[best_motif] = total_count
-        
-        # 디버깅용 출력
-        if len(group_members) > 1:
-            member_info = [(m, len(m), c) for m, c in group_members]
-            # print(f"[GROUPING] 회전 그룹: {member_info} → 선택: {best_motif}")
     
     return grouped_result
 
