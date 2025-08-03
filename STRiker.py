@@ -1,3 +1,5 @@
+# TODO motif 등장횟수 중복으로 count되는지 확인
+# 예를 들어서 GAA가 100번, AAG가 100번 등장하면, 각각 100번씩 등장하는지 확인
 from collections import defaultdict
 import analyze_func_pysam
 from config import *
@@ -89,17 +91,20 @@ def main_sequential(bam_file, csv_file, fasta_file):
     # motif dict만들기, 여기서의 motif_dict에 reference motif도 포함되어 있음
     motif_dict = analyze_func_pysam.make_motif_dict(bam_file, STR_regions_dict, depth_dict, reference_motif_dict_consc)
     # motif_dict는 {gene: {motif: [count, ...], ...}, ...} 형태
-    motif_dict = analyze_func_pysam.filter_motif_dict(motif_dict, MINIMUM_MOTIF_COVERAGE, reference_motif_dict_consc)
+    motif_dict = analyze_func_pysam.filter_motif_dict(motif_dict, reference_motif_dict_consc)
     # motif중에 known_motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
     motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
-    
+
+    # custom motif 처리
+    breakpoint()
+
     pattern_dict, consecutive_repeat_results, total_repeat_results = analyze_func_pysam.make_pattern_dict(bam_file, STR_regions_dict, motif_dict)
     pattern_dict = analyze_func_pysam.simplify_pattern_dict(pattern_dict, motif_dict)
 
-
+    breakpoint()
 
     # reference motif과 de novo motif을 비교하기 위한 파일 생성 
-    analyze_func_pysam.save_motif_as_xlsx(motif_ref_denovo_file_name, motif_dict, reference_motif_dict_consc, reference_motif_dict_total,consecutive_repeat_results,total_repeat_results, depth_dict)
+    analyze_func_pysam.save_motif_as_xlsx(motif_ref_denovo_file_name, motif_dict, reference_motif_dict_consc, reference_motif_dict_total, consecutive_repeat_results, total_repeat_results, depth_dict)
 
     # # Percent coverage 계산 및 저장    
     analyze_func_pysam.write_coverage_percent(coverage_file, depth_dict, threshold=COVERAGE_THRESHOLD)
@@ -174,8 +179,8 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
     ax.set_xticklabels(np.arange(0, num_cols, xtick_step), fontsize=8)
     ax.set_yticks(np.arange(0, num_reads, ytick_step))
     ax.set_yticklabels(np.arange(0, num_reads, ytick_step), fontsize=8)
-    ax.set_xlabel("Sequence Length", fontsize=4)
-    ax.set_ylabel("Read Index", fontsize=4)
+    ax.set_xlabel("Sequence Length", fontsize=7)
+    ax.set_ylabel("Read Count", fontsize=7)
     ax.set_title(f"{gene} - Pattern Visualization", fontsize=7)
 
     # Legend 추가

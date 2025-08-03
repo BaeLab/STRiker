@@ -345,21 +345,13 @@ def make_motif_dict(bam_file, STR_regions_dict, depth_dict, reference_motif_dict
                     if consecutive_count > 0:  # 0보다 큰 경우만 추가
                         motif_dict[gene][reference_motif].append(consecutive_count)
     
-    # BAM 파일 처리 완료 후 coverage 필터링 수행
-    # print(f"[COVERAGE FILTERING] MINIMUM_MOTIF_COVERAGE = {MINIMUM_MOTIF_COVERAGE}")
-    # 재현성을 위해 정렬된 순서로 처리
-    # for gene in sorted(temp_motif_candidates.keys()):
     for gene in temp_motif_candidates.keys():
         motif_candidates = temp_motif_candidates[gene]
-        # for motif in sorted(motif_candidates.keys()):
         for motif in motif_candidates.keys():
             count_list = motif_candidates[motif]
             # CONSECUTIVE_THRESHOLD를 만족하는 read가 MINIMUM_MOTIF_COVERAGE 이상인지 확인
             if len(count_list) >= MINIMUM_MOTIF_COVERAGE:
                 motif_dict[gene][motif] = count_list
-                # print(f"[COVERAGE FILTERING] {gene} - {motif}: {len(count_list)} reads ≥ {MINIMUM_MOTIF_COVERAGE} → ACCEPTED")
-            # else:
-            #     print(f"[COVERAGE FILTERING] {gene} - {motif}: {len(count_list)} reads < {MINIMUM_MOTIF_COVERAGE} → REJECTED")
     
     bam_hdl.close()
     return motif_dict
@@ -395,18 +387,13 @@ def make_pattern_dict(bam_file, STR_regions_dict, motif_dict):
             pattern_list = analyze_pattern_occurrencesV6_option1(read_seq, motifs)
 
             pattern_dict[gene].append(pattern_list)
-            # 범위내에 있는 read의 motif total갯수를 셈.
-            # 재현성을 위해 정렬된 순서로 처리
-            for motif, count in sorted(analyze_pattern_total_occurences(read_seq, motifs).items(), key=lambda x: x[0]):
+            for motif, count in sorted(analyze_pattern_total_occurences(pattern_list, motifs).items(), key=lambda x: x[0]):
                 total_repeat_results[gene][motif].append(count)
 
-            # consecutive repeat에 대해 각 리드별 motif의 연속 등장 최댓값 저장
-            # 재현성을 위해 정렬된 순서로 처리
             for motif, max_consec_repeat_num in sorted(get_maximum_consecutive_repeats(pattern_list, motifs).items(), key=lambda x: x[0]):
                 consecutive_repeat_results[gene][motif].append(max_consec_repeat_num)
         
     bam_hdl.close()
-    # sorting
     get_length = lambda x: sum(len(seq) * count for seq, count in x)
     pattern_dict = dict(sorted(pattern_dict.items(), key=lambda x: x[0], reverse=False))
     for gene in pattern_dict.keys():
@@ -414,8 +401,6 @@ def make_pattern_dict(bam_file, STR_regions_dict, motif_dict):
     for gene in total_repeat_results.keys():
         total_repeat_results[gene] = dict(sorted(total_repeat_results[gene].items(), key=lambda x: x[0], reverse=False))
         consecutive_repeat_results[gene] = dict(sorted(consecutive_repeat_results[gene].items(), key=lambda x: x[0], reverse=False))
-    total_repeat_results = dict(sorted(total_repeat_results.items(), key=lambda x: x[0], reverse=False))
-    consecutive_repeat_results = dict(sorted(consecutive_repeat_results.items(), key=lambda x: x[0], reverse=False))
 
     return (pattern_dict, consecutive_repeat_results, total_repeat_results)
 
@@ -423,7 +408,7 @@ def make_pattern_dict(bam_file, STR_regions_dict, motif_dict):
 
 
 
-def filter_motif_dict(motif_dict, minimum_motif_coverage, reference_motif_dict):
+def filter_motif_dict(motif_dict, reference_motif_dict):
     """
     motif_dict를 받아서 각 motif의 최댓값으로 변환한다.
     새로운 로직: make_motif_dict에서 이미 coverage 필터링이 완료되었으므로 여기서는 최댓값 변환만 수행
@@ -843,23 +828,17 @@ def save_debug_info_to_file(output_folder, bam_file, motif_dict, pattern_dict):
     
     with open(pattern_json_file, 'w', encoding='utf-8') as f:
         json.dump(pattern_dict_serializable, f, indent=2, ensure_ascii=False)
-    
-    # print(f"Debug files saved:")
-    # print(f"  - Motif debug: {motif_debug_file}")
-    # print(f"  - Pattern debug: {pattern_debug_file}")
-    # print(f"  - Pattern JSON: {pattern_json_file}")
 
 
-def analyze_pattern_total_occurences(read_seq: str, motifs: list) -> List[Tuple[str, int]]:
+
+def analyze_pattern_total_occurences(pattern_list: list, motifs: list) -> List[Tuple[str, int]]:
     """
     read_seq에서 motifs에 있는 motif들이 몇 번 등장하는지 반환
     """
-    # 재현성을 위해 길이가 같을 때는 알파벳 순으로 정렬
-    motifs = sorted(motifs, key=lambda x: (-len(x), x))
     result = {motif: 0 for motif in motifs}
-    for motif in motifs:
-        count = read_seq.count(motif)
-        result[motif] = count
+    for motif, count in pattern_list:
+        if motif in motifs:
+            result[motif] += count
     return result
 
 
@@ -867,10 +846,7 @@ def get_maximum_consecutive_repeats(pattern_list: list, motifs: list) -> Dict[st
     """
     pattern_list에서 motif가 몇 번 연속으로 등장하는지 찾는 함수.
     """
-    result_dict = {}
-    # result_dict 초기화
-    for motif in motifs:
-        result_dict[motif] = 0
+    result_dict = {motif: 0 for motif in motifs}  # 초기화
 
     for motif, count in pattern_list:
         if motif in motifs:
@@ -919,10 +895,6 @@ def show_kde_v2(ax, bam_file, STR_regions_dict, gene, read_threshold):
         ax.set_title(f"{gene} - KDE skipped", fontsize=5)
         return
 
-
-    # Reference length을 0으로 맞추기
-    # read_length_list = [x - reference_length for x in read_length_list]
-    # reference_length = 0
 
     kde = gaussian_kde(read_length_list, bw_method=0.5)
     x_vals = np.linspace(min(read_length_list), max(read_length_list), 1000)
@@ -988,8 +960,8 @@ def show_kde_v2(ax, bam_file, STR_regions_dict, gene, read_threshold):
     ax.axvline(x=reference_length + pathogenic_size, color="red", linestyle="--", linewidth=2)
 
 
-    ax.set_xlabel("Read Length", fontsize=4)
-    ax.set_ylabel("Frequency", fontsize=4)
+    ax.set_xlabel("Read Length", fontsize=7)
+    ax.set_ylabel("Frequency", fontsize=7)
     ax.set_title(f"Read Length Distribution for {gene}", fontsize=7)
     ax.tick_params(axis='both', which='major', labelsize=4)
     ax.legend(handles=legend_elements, bbox_to_anchor=(1.0,1.0), loc='upper left', ncol=1, frameon=True,
