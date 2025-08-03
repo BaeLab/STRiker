@@ -1,3 +1,4 @@
 input_bam/
 input_bam_1/
 fasta/
+repeat_motif_test.py

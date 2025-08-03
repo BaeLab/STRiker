@@ -96,4 +96,9 @@ Striker generates two directories in the input folder:
 
 ## 📄 License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+
+## Copyright
+
+Copyright 2025 Chanju Jung. All rights reserved.
