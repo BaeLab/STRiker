@@ -96,9 +96,13 @@ Striker generates two directories in the input folder:
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under CC BY-NC-SA 4.0 - Non-commercial use only.
 
+### Commercial Use
+For commercial licensing inquiries, please contact bbakgosu@snu.ac.kr
 
-## Copyright
-
-Copyright 2025 Chanju Jung. All rights reserved.
+## Usage Rights
+- ✅ Personal use
+- ✅ Educational use  
+- ✅ Research use
+- ❌ Commercial use (requires separate license)
