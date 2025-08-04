@@ -22,15 +22,15 @@ A Python tool for detecting short tandem repeats (STRs), analyzing motif pattern
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/bbakgosu/repeat_plotting
-cd repeat_plotting
+git clone https://github.com/BaeLab/STRiker
+cd STRiker
 ```
 
 ### 2. Set up environment (conda recommended)
 
 
 ```bash
-conda env create  --name STRiker -f environment.yml
+conda env create  --name STRiker -f environment.yaml
 conda activate STRiker
 ```
 
