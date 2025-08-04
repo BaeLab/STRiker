@@ -429,7 +429,7 @@ def filter_motif_dict(motif_dict, reference_motif_dict):
         for ref_motif in reference_motif_dict.get(gene, {}):
             if ref_motif not in motif_dict[gene]:
                 motif_dict[gene][ref_motif] = 0
-                print(f"[FILTER] {gene} - Reference motif {ref_motif} added with count 0")
+                # print(f"[FILTER] {gene} - Reference motif {ref_motif} added with count 0")
     
     motif_dict = {k: v for k, v in motif_dict.items() if v}  # 빈 딕셔너리 제거
     return motif_dict

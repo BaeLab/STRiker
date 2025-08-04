@@ -96,12 +96,11 @@ def main_sequential(bam_file, csv_file, fasta_file):
     motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
 
     # custom motif 처리
-    breakpoint()
+    # breakpoint()
 
     pattern_dict, consecutive_repeat_results, total_repeat_results = analyze_func_pysam.make_pattern_dict(bam_file, STR_regions_dict, motif_dict)
     pattern_dict = analyze_func_pysam.simplify_pattern_dict(pattern_dict, motif_dict)
 
-    breakpoint()
 
     # reference motif과 de novo motif을 비교하기 위한 파일 생성 
     analyze_func_pysam.save_motif_as_xlsx(motif_ref_denovo_file_name, motif_dict, reference_motif_dict_consc, reference_motif_dict_total, consecutive_repeat_results, total_repeat_results, depth_dict)
