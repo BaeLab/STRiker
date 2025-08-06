@@ -1,19 +1,19 @@
 # STRiker
 
-A Python tool for detecting short tandem repeats (STRs), analyzing motif patterns, and visualizing repeat number distributions in long read sequencing data (e.g., BAM files from Oxford Nanopore sequencing).
+A Python tool for detecting short tandem repeats (STRs), analyzing motif patterns, and visualizing repeat number distributions in long read sequencing data (e.g., BAM files from Oxford Nanopore sequencing). 
 
 ---
 
 ## 📦 Features
 
 - Detects STR motifs from reference sequence (e.g., GRCh38) and aligned BAM files 
+- **Multiprocessing support** for significantly faster analysis of multiple genes
 - Generates:
   - PDF reports with:
     - Visualization of STR motifs pattern for each region
     - Kernel Density Estimation (KDE) plots for read lengths for each region
-    - Histograms of repeat numbers for each 
-  - Read length KDE plots
-  - Repeat number histograms
+  - Excel files with detailed motif statistics and repeat counts
+  - Coverage analysis reports
 
 ---
 
@@ -64,23 +64,38 @@ The parameters include:
 
 ## 🧬 Usage
 
-<!-- ```bash
-python striker.py \
-    --bam input.bam \
-    --regions STR_regions.json \
-    --output results/
-``` -->
+### Basic Usage (Sequential Processing)
 ```bash
 python STRiker.py <loci.csv> <reference.fasta> <bam_file>
 ```
 
+### Multiprocessing Usage (Parallel Processing)
+For faster processing with multiprocessing:
+
+```bash
+# Use multiprocessing with automatic CPU detection
+python STRiker.py <loci.csv> <reference.fasta> <bam_file> --parallel
+
+# Specify the number of processes to use
+python STRiker.py <loci.csv> <reference.fasta> <bam_file> --processes 4
+```
+
+### Arguments:
+- `<loci.csv>`: CSV file containing gene loci information
+- `<reference.fasta>`: Reference genome FASTA file (e.g., GRCh38)
+- `<bam_file>`: Input BAM file with aligned reads
+- `--parallel`: (Optional) Enable multiprocessing mode
+- `--processes N`: (Optional) Number of processes to use (default: auto-detect, max 8)
 
 
-<!-- Arguments:
-- `--bam`: Input BAM file path
-- `--regions`: JSON file with STR region metadata
-- `--output`: Folder where PDF and summary files will be saved
-- `--read-threshold`: (Optional) Minimum number of valid reads per gene to be included in plot -->
+### Example:
+```bash
+# Sequential processing
+python STRiker.py genes.csv GRCh38.fasta sample.bam
+
+# Parallel processing with 4 cores
+python STRiker.py genes.csv GRCh38.fasta sample.bam --processes 4
+```
 
 ---
 
