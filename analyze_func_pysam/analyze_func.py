@@ -14,6 +14,13 @@ import numpy as np
 from scipy.signal import find_peaks
 from scipy.optimize import curve_fit
 from matplotlib.ticker import MaxNLocator
+import multiprocessing as mp
+from functools import partial
+
+
+def get_pattern_length(pattern_occurrence):
+    """패턴 발생의 총 길이를 계산하는 함수"""
+    return sum(len(seq) * count for seq, count in pattern_occurrence)
 
 
 def reverse_complement(seq: str) -> str:
@@ -169,34 +176,12 @@ def samfile_process(line:str) -> Tuple[str]:
 
 
 
-
-
-
-
-
 def rotate_string(s):
     """
     문자열의 모든 가능한 회전 버전을 반환
     예: "ABCD" → ["ABCD", "BCDA", "CDAB", "DABC"]
     """
     return [s[i:] + s[:i] for i in range(len(s))]
-
-
-
-def find_most_frequent_rotation(s, string, length, start, consecutive_threshold):
-    """
-    모든 회전 버전 중에서 가장 자주 등장한 버전을 반환
-    """
-    rotations = rotate_string(s)
-    rotation_counts = {rotation: 0 for rotation in rotations}
-
-    for i in range(consecutive_threshold):
-        substring = string[start + i*length : start + (i+1)*length]
-        if substring in rotations:
-            rotation_counts[substring] += 1
-
-    # 등장 횟수가 가장 많은 회전 버전 반환
-    return max(rotation_counts, key=rotation_counts.get)
 
 
 def is_repeated_by(key, candidate):
@@ -252,25 +237,110 @@ def write_coverage_percent(file_name: str, depth_dict: str, threshold: int = 30)
     print(f"Coverage percentage saved to {file_name}")
     return None
 
-
-
-def canonical_rotation(s):
+def process_gene_motif(gene_data, bam_file, reference_motif_dict):
     """
-    회전 불변성을 유지하되, 알파벳 순서가 아닌 다른 기준을 사용
-    최소 circular string 알고리즘을 사용하여 일관된 대표 형태를 선택
+    단일 gene에 대해 motif dictionary 생성을 수행하는 함수
     """
-    if not s:
-        return s
-        
-    # 가장 작은 회전 형태를 찾되, 알파벳 순서가 아닌 순환 문자열의 최소 표현을 사용
-    rotations = rotate_string(s)
+    gene, gene_info = gene_data
+    chrom = gene_info["chrom"]
+    start = gene_info["start"]
+    end = gene_info["end"]
     
-    # 원본 문자열 그대로 반환 (회전 불변성은 나중에 그룹화에서 처리)
-    # 이렇게 하면 긴 motif도 제대로 처리되고, 원본 형태가 유지됨
-    return s
+    # 임시 저장소: 각 motif별로 조건을 만족하는 read 카운트 추적
+    temp_motif_candidates = {}
+    motif_dict_gene = {}
+    depth_count = 0
+    
+    reference_motifs = reference_motif_dict.get(gene, {})
+    
+    bam_hdl = pysam.AlignmentFile(bam_file, "rb")
+    
+    # 원하는 부위의 sequence만을 가져온 뒤 insertion된 시퀀스에 대해 motif finding
+    for read in bam_hdl.fetch(chrom, start, end):
+        if not is_primary_and_mapped(read):
+            continue
+        if not(read.reference_start <= start and read.reference_end >= end):
+            continue
+        else:
+            depth_count += 1
+        cigartuples = read.cigartuples # List of tuples [(operation, length), ...]
+        # operation codes: 0=M, 1=I, 2=D, 3=N, 4=S, 5=H, ...
+        query_pos = 0
+        ref_pos = read.reference_start
+
+        for op, length in cigartuples:
+            if op == 0: # match (M)
+                query_pos += length
+                ref_pos += length
+            elif op == 1: # insertion (I)
+                # ref_pos는 증가하지 않고, query_pos만 증가
+                if start <= ref_pos <= end and read.query_sequence is not None:
+                    inserted_seq = read.query_sequence[query_pos:query_pos + length]
+                    # motif finding
+                    de_novo_motif = find_consecutive_base_motifs(inserted_seq, min_length=MINIMUM_MOTIF_LENGTH, max_length=MAXIMUM_MOTIF_LENGTH, consecutive_threshold=CONSECUTIVE_THRESHOLD)
+                    if de_novo_motif:
+                        de_novo_motif = filter_keys_by_repetition(de_novo_motif)
+                        # 임시 저장소에 후보 motif들 저장
+                        # 길이 우선 정렬 (긴 motif 우선 처리)
+                        for motif, count in sorted(de_novo_motif.items(), key=lambda x: (-len(x[0]))):
+                            if motif not in temp_motif_candidates:
+                                temp_motif_candidates[motif] = []
+                            temp_motif_candidates[motif].append(count)
+                    else:
+                        continue
+                query_pos += length
+            elif op == 2: # deletion (D)
+                ref_pos += length
+            elif op == 3: # skip (N)
+                ref_pos += length
+            elif op == 4: # soft clipping (S)
+                query_pos += length
+            elif op == 5: # hard clipping (H)
+                pass
+            else:
+                pass
+        
+        # 현재 gene의 범위에 대해 reference motif를 찾음
+        for reference_motif in reference_motifs:
+            if read.query_sequence is not None:  # None 체크 추가
+                consecutive_count = count_consecutive_occurrences_optimized(read.query_sequence, reference_motif)
+                if consecutive_count > 0:  # 0보다 큰 경우만 추가
+                    if reference_motif not in motif_dict_gene:
+                        motif_dict_gene[reference_motif] = []
+                    motif_dict_gene[reference_motif].append(consecutive_count)
+    
+    # 필터링: CONSECUTIVE_THRESHOLD를 만족하는 read가 MINIMUM_MOTIF_COVERAGE 이상인지 확인
+    for motif in temp_motif_candidates.keys():
+        count_list = temp_motif_candidates[motif]
+        if len(count_list) >= MINIMUM_MOTIF_COVERAGE:
+            motif_dict_gene[motif] = count_list
+    
+    bam_hdl.close()
+    return gene, motif_dict_gene, depth_count
 
 
-
+def make_motif_dict_parallel(bam_file, STR_regions_dict, depth_dict, reference_motif_dict, num_processes=None) -> Dict[str, Dict[str, List[int]]]:
+    """
+    multiprocessing을 사용하여 motif_dict를 생성하는 함수
+    """
+    if num_processes is None:
+        num_processes = min(mp.cpu_count(), 8)
+    
+    # gene 데이터를 준비
+    gene_data_list = list(STR_regions_dict.items())
+    
+    # multiprocessing으로 각 gene 처리
+    with mp.Pool(processes=num_processes) as pool:
+        process_func = partial(process_gene_motif, bam_file=bam_file, reference_motif_dict=reference_motif_dict)
+        results = pool.map(process_func, gene_data_list)
+    
+    # 결과를 통합
+    motif_dict = defaultdict(dict)
+    for gene, gene_motif_dict, depth_count in results:
+        motif_dict[gene] = gene_motif_dict
+        depth_dict[gene] = depth_count
+    
+    return motif_dict
 
 
 def make_motif_dict(bam_file, STR_regions_dict, depth_dict, reference_motif_dict) -> Dict[str, Dict[str, List[int]]]:
@@ -358,6 +428,87 @@ def make_motif_dict(bam_file, STR_regions_dict, depth_dict, reference_motif_dict
 
 
 
+def process_gene_pattern(gene_data, bam_file, motif_dict):
+    """
+    단일 gene에 대해 pattern dictionary 생성을 수행하는 함수
+    """
+    gene, gene_info = gene_data
+    chrom = gene_info["chrom"]
+    start = gene_info["start"]
+    end = gene_info["end"]
+    
+    pattern_list = []
+    consecutive_repeat_results_gene = {}
+    total_repeat_results_gene = {}
+    
+    bam_hdl = pysam.AlignmentFile(bam_file, "rb")
+    
+    for read in bam_hdl.fetch(chrom, start, end):
+        if not is_primary_and_mapped(read):
+            continue
+        if not(read.reference_start <= start and read.reference_end >= end):
+            continue
+        
+        read_seq = extract_sequence_with_deletionV2(read, start - LEFT_TRIM, end + RIGHT_TRIM)
+        motifs = list(motif_dict.get(gene, {}).keys())
+        # 옵션 1 방식 사용 (기본)
+        pattern_occurrence = analyze_pattern_occurrencesV6_option1(read_seq, motifs)
+
+        pattern_list.append(pattern_occurrence)
+        
+        for motif, count in sorted(analyze_pattern_total_occurences(pattern_occurrence, motifs).items(), key=lambda x: x[0]):
+            if motif not in total_repeat_results_gene:
+                total_repeat_results_gene[motif] = []
+            total_repeat_results_gene[motif].append(count)
+
+        for motif, max_consec_repeat_num in sorted(get_maximum_consecutive_repeats(pattern_occurrence, motifs).items(), key=lambda x: x[0]):
+            if motif not in consecutive_repeat_results_gene:
+                consecutive_repeat_results_gene[motif] = []
+            consecutive_repeat_results_gene[motif].append(max_consec_repeat_num)
+    
+    bam_hdl.close()
+    
+    # 길이별로 정렬
+    pattern_list.sort(key=get_pattern_length, reverse=True)
+    
+    # 딕셔너리 정렬
+    total_repeat_results_gene = dict(sorted(total_repeat_results_gene.items()))
+    consecutive_repeat_results_gene = dict(sorted(consecutive_repeat_results_gene.items()))
+    
+    return gene, pattern_list, consecutive_repeat_results_gene, total_repeat_results_gene
+
+
+def make_pattern_dict_parallel(bam_file, STR_regions_dict, motif_dict, num_processes=None):
+    """
+    multiprocessing을 사용하여 pattern_dict를 생성하는 함수
+    """
+    if num_processes is None:
+        num_processes = min(mp.cpu_count(), 8)
+    
+    # gene 데이터를 준비
+    gene_data_list = list(STR_regions_dict.items())
+    
+    # multiprocessing으로 각 gene 처리
+    with mp.Pool(processes=num_processes) as pool:
+        process_func = partial(process_gene_pattern, bam_file=bam_file, motif_dict=motif_dict)
+        results = pool.map(process_func, gene_data_list)
+    
+    # 결과를 통합
+    pattern_dict = defaultdict(list)
+    consecutive_repeat_results = defaultdict(dict)
+    total_repeat_results = defaultdict(dict)
+    
+    for gene, pattern_list, consec_results, total_results in results:
+        pattern_dict[gene] = pattern_list
+        consecutive_repeat_results[gene] = consec_results
+        total_repeat_results[gene] = total_results
+    
+    # 전체 딕셔너리 정렬
+    pattern_dict = dict(sorted(pattern_dict.items(), key=lambda x: x[0], reverse=False))
+    
+    return (pattern_dict, consecutive_repeat_results, total_repeat_results)
+
+
 def make_pattern_dict(bam_file, STR_regions_dict, motif_dict):
     """
     Deletion gap을 *로 채우고, soft clipping을 제거한 뒤 pattern_dict생성
@@ -394,10 +545,9 @@ def make_pattern_dict(bam_file, STR_regions_dict, motif_dict):
                 consecutive_repeat_results[gene][motif].append(max_consec_repeat_num)
         
     bam_hdl.close()
-    get_length = lambda x: sum(len(seq) * count for seq, count in x)
     pattern_dict = dict(sorted(pattern_dict.items(), key=lambda x: x[0], reverse=False))
     for gene in pattern_dict.keys():
-        pattern_dict[gene].sort(key=get_length, reverse=True)
+        pattern_dict[gene].sort(key=get_pattern_length, reverse=True)
     for gene in total_repeat_results.keys():
         total_repeat_results[gene] = dict(sorted(total_repeat_results[gene].items(), key=lambda x: x[0], reverse=False))
         consecutive_repeat_results[gene] = dict(sorted(consecutive_repeat_results[gene].items(), key=lambda x: x[0], reverse=False))
@@ -412,11 +562,14 @@ def filter_motif_dict(motif_dict, reference_motif_dict):
     """
     motif_dict를 받아서 각 motif의 최댓값으로 변환한다.
     새로운 로직: make_motif_dict에서 이미 coverage 필터링이 완료되었으므로 여기서는 최댓값 변환만 수행
-    reference motif_dict에 있는 motif은 무조건 유지
+    read depth가 있는 gene의 reference motif만 유지
     """
     # 재현성을 위해 정렬된 순서로 처리
     for gene in sorted(motif_dict.keys()):
         motif = motif_dict[gene]
+        if not motif:  # 빈 딕셔너리면 건너뛰기 (read depth가 0인 경우)
+            continue
+            
         for k in sorted(motif.keys()):
             v = motif[k]
             # 리스트를 최댓값으로 변환
@@ -425,7 +578,7 @@ def filter_motif_dict(motif_dict, reference_motif_dict):
             elif not v:  # 빈 리스트인 경우
                 motif_dict[gene][k] = 0
         
-        # reference motif는 무조건 유지하되, 없으면 0으로 설정
+        # reference motif는 해당 gene에 read가 있을 때만 추가
         for ref_motif in reference_motif_dict.get(gene, {}):
             if ref_motif not in motif_dict[gene]:
                 motif_dict[gene][ref_motif] = 0

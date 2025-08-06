@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
+import multiprocessing as mp
+from functools import partial
 
 
 def load_csv_data(csv_file):
@@ -31,6 +33,112 @@ def load_csv_data(csv_file):
 
 
 
+def process_gene_reference_motif(gene_data, fasta_file):
+    """
+    단일 gene에 대해 reference motif 찾기를 수행하는 함수
+    """
+    gene, gene_info = gene_data
+    patho_start = gene_info["start"]
+    patho_end = gene_info["end"]
+    chrom = gene_info["chrom"]
+    known_motif_list = gene_info["known_motif"].split("/")
+
+    seq = analyze_func_pysam.get_sequence_from_fasta(fasta_file, chrom, patho_start-REFERENCE_LEFT_TRIM, patho_end + REFERENCE_RIGHT_TRIM)
+    consecutive_substrings = analyze_func_pysam.find_consecutive_base_motifs(seq,
+                                                                                min_length=REFERENCE_MINIMUM_MOTIF_LENGTH,
+                                                                                max_length=REFERENCE_MAXIMUM_MOTIF_LENGTH, 
+                                                                                consecutive_threshold=REFERENCE_CONSECUTIVE_THRESHOLD)
+    
+    # Reference motif 처리: 원본 motif를 그대로 유지하면서 known motif와 매핑
+    new_consecutive_substrings = {}
+    
+    # 길이 우선 정렬 (긴 motif 우선 처리)
+    for motif, count in sorted(consecutive_substrings.items(), key=lambda x: (-len(x[0]), -x[1], x[0])):
+        final_motif = motif  # 기본적으로 원본 motif 유지
+        
+        # known motif와 회전해서 일치하는 경우에만 매핑
+        for known_motif in known_motif_list:
+            if motif in analyze_func_pysam.rotate_string_set(known_motif):
+                final_motif = known_motif
+                break
+        
+        # 매핑된 motif로 카운트 합산
+        if final_motif in new_consecutive_substrings:
+            new_consecutive_substrings[final_motif] += count
+        else:
+            new_consecutive_substrings[final_motif] = count
+    
+    consecutive_substrings = new_consecutive_substrings
+
+    # Reference motif dictionary에 저장
+    reference_motif_dict_consc = {}
+    reference_motif_dict_total = {}
+    
+    # 길이 우선 정렬 (긴 motif 우선 처리)
+    for motif, count in sorted(consecutive_substrings.items(), key=lambda x: (-len(x[0]), -x[1], x[0])):
+        reference_motif_dict_consc[motif] = count
+        reference_motif_dict_total[motif] = seq.count(motif)
+    
+    return gene, reference_motif_dict_consc, reference_motif_dict_total
+
+
+def main_parallel(bam_file, csv_file, fasta_file, num_processes=None):
+    """
+    multiprocessing을 사용하는 메인 함수
+    """
+    if num_processes is None:
+        num_processes = min(mp.cpu_count(), 8)  # 최대 8개 프로세스 사용
+    
+    # motif_results라는 폴더 없으면 생성
+    motif_results_folder = os.path.join(os.path.dirname(bam_file), "motif_results")
+    os.makedirs(motif_results_folder, exist_ok=True)
+    
+    # CSV 파일에서 데이터를 읽어옴
+    STR_regions_dict, depth_dict = load_csv_data(csv_file)
+
+    motif_ref_denovo_file_name = bam_file.replace(".bam", "_motif_ref_denovo.xlsx")
+    motif_ref_denovo_file_name = os.path.join(motif_results_folder, os.path.basename(motif_ref_denovo_file_name))
+    coverage_file = bam_file.replace(".bam", "_coverage.txt")
+    coverage_file = os.path.join(motif_results_folder, os.path.basename(coverage_file))
+
+    reference_motif_dict_consc = defaultdict(dict)
+    reference_motif_dict_total = defaultdict(dict)
+    
+    # GRCh38 reference genome에서 tandem repeat motif를 찾음. (병렬처리)
+    print(f"Processing reference motifs with {num_processes} processes...")
+    with mp.Pool(processes=num_processes) as pool:
+        gene_data_list = list(STR_regions_dict.items())
+        process_gene_func = partial(process_gene_reference_motif, fasta_file=fasta_file)
+        results = pool.map(process_gene_func, gene_data_list)
+    
+    # 결과를 딕셔너리로 변환
+    for gene, ref_consc, ref_total in results:
+        reference_motif_dict_consc[gene] = ref_consc
+        reference_motif_dict_total[gene] = ref_total
+    
+    # motif dict만들기, 여기서의 motif_dict에 reference motif도 포함되어 있음
+    print("Creating motif dictionary...")
+    motif_dict = analyze_func_pysam.make_motif_dict_parallel(bam_file, STR_regions_dict, depth_dict, reference_motif_dict_consc, num_processes)
+    
+    # motif_dict는 {gene: {motif: [count, ...], ...}, ...} 형태
+    motif_dict = analyze_func_pysam.filter_motif_dict(motif_dict, reference_motif_dict_consc)
+    # motif중에 known_motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
+    motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
+
+    print("Creating pattern dictionary...")
+    pattern_dict, consecutive_repeat_results, total_repeat_results = analyze_func_pysam.make_pattern_dict_parallel(bam_file, STR_regions_dict, motif_dict, num_processes)
+    pattern_dict = analyze_func_pysam.simplify_pattern_dict(pattern_dict, motif_dict)
+
+    # reference motif과 de novo motif을 비교하기 위한 파일 생성 
+    print("Saving results...")
+    analyze_func_pysam.save_motif_as_xlsx(motif_ref_denovo_file_name, motif_dict, reference_motif_dict_consc, reference_motif_dict_total, consecutive_repeat_results, total_repeat_results, depth_dict)
+
+    # # Percent coverage 계산 및 저장    
+    analyze_func_pysam.write_coverage_percent(coverage_file, depth_dict, threshold=COVERAGE_THRESHOLD)
+
+    return (pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results)
+
+
 def main_sequential(bam_file, csv_file, fasta_file):
     # motif_results라는 폴더 없으면 생성
     motif_results_folder = os.path.join(os.path.dirname(bam_file), "motif_results")
@@ -44,8 +152,8 @@ def main_sequential(bam_file, csv_file, fasta_file):
     coverage_file = bam_file.replace(".bam", "_coverage.txt")
     coverage_file = os.path.join(motif_results_folder, os.path.basename(coverage_file))
 
-    reference_motif_dict_consc = defaultdict(lambda: defaultdict(int))
-    reference_motif_dict_total = defaultdict(lambda: defaultdict(int))
+    reference_motif_dict_consc = defaultdict(dict)
+    reference_motif_dict_total = defaultdict(dict)
     
     # GRCh38 reference genome에서 tandem repeat motif를 찾음.
     for gene in STR_regions_dict.keys():
@@ -196,7 +304,6 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
     """
     repeat number histogram을 추가하여 4행 3열로 구성된 PDF 파일을 생성합니다.
     """
-    from matplotlib.lines import Line2D
     gene_list = list(motif_dict.keys())
 
     output_folder = os.path.join(os.path.dirname(input_file), "gene_panel_output")
@@ -238,12 +345,32 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
 if __name__ == "__main__":
 
     # check arguments
-    if len(sys.argv) != 4:
-        print("Usage: python script.py <csv_file> <fasta_file> <bam_file> ")
+    if len(sys.argv) < 4 or len(sys.argv) > 6:
+        print("Usage: python script.py <csv_file> <fasta_file> <bam_file> [--parallel] [--processes N]")
+        print("  --parallel: Use multiprocessing (default: sequential)")
+        print("  --processes N: Number of processes to use (default: auto-detect)")
         sys.exit(1)
+    
     csv_file = sys.argv[1]
     fasta_file = sys.argv[2]
     bam_file = sys.argv[3]
+    
+    # Parse optional arguments
+    use_parallel = False
+    num_processes = None
+    
+    for i in range(4, len(sys.argv)):
+        if sys.argv[i] == "--parallel":
+            use_parallel = True
+        elif sys.argv[i] == "--processes" and i + 1 < len(sys.argv):
+            try:
+                num_processes = int(sys.argv[i + 1])
+                use_parallel = True  # processes 옵션이 있으면 자동으로 parallel 모드
+            except ValueError:
+                print("Error: --processes must be followed by a valid integer")
+                sys.exit(1)
+    
+    # File existence checks
     if not os.path.exists(bam_file):
         print(f"Error: BAM file {bam_file} does not exist.")
         sys.exit(1)
@@ -254,11 +381,17 @@ if __name__ == "__main__":
         print(f"Error: CSV file {csv_file} does not exist.")
         sys.exit(1)
 
-
-
-    pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results= main_sequential(bam_file, csv_file, fasta_file=fasta_file)
+    # Run analysis
+    if use_parallel:
+        print("Running analysis with multiprocessing...")
+        pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results = main_parallel(bam_file, csv_file, fasta_file, num_processes)
+    else:
+        print("Running analysis sequentially...")
+        pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results = main_sequential(bam_file, csv_file, fasta_file)
+    
     STR_regions_dict, _ = load_csv_data(csv_file)
     
+    print("Generating plots...")
     output_folder = os.path.dirname(bam_file)
     save_gene_plots_with_heatmap_v2(
         pattern_dict,
@@ -267,3 +400,4 @@ if __name__ == "__main__":
         STR_regions_dict=STR_regions_dict,
         input_file=bam_file
     )
+    print("Analysis completed!")
