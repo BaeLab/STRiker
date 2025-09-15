@@ -34,6 +34,30 @@ conda env create  --name STRiker -f environment.yaml
 conda activate STRiker
 ```
 
+### 3. Download Reference Genome (Recommended)
+
+For optimal compatibility with most alignment tools, we recommend using the **GRCh38 no-alt analysis set** from NCBI:
+
+```bash
+# Download the reference genome
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
+
+# Decompress the file
+gzip -d GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
+
+# (Optional) Create an index for faster access
+samtools faidx GCA_000001405.15_GRCh38_no_alt_analysis_set.fna
+```
+
+#### Why this reference?
+This reference genome version:
+- Contains chromosomes with UCSC-style names (chr1, chr2, etc.)
+- Excludes alternative contigs that can complicate STR analysis
+- Is optimized for alignment pipelines
+- Maintains compatibility with most bioinformatics tools
+
+For more information about choosing the right human reference genome, see [this guide by Heng Li](https://lh3.github.io/2017/11/13/which-human-reference-genome-to-use).
+
 
 ---
 
