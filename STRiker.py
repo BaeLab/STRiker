@@ -204,7 +204,6 @@ def main_sequential(bam_file, csv_file, fasta_file):
     motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
 
     # custom motif 처리
-    # breakpoint()
 
     pattern_dict, consecutive_repeat_results, total_repeat_results = analyze_func_pysam.make_pattern_dict(bam_file, STR_regions_dict, motif_dict)
     pattern_dict = analyze_func_pysam.simplify_pattern_dict(pattern_dict, motif_dict)
@@ -238,27 +237,34 @@ def nice_tick_step(n, target_tick_count=7):
 def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
     from matplotlib.patches import Patch
 
-    if len(pattern_dict[gene]) < read_threshold:
+    # pattern_dict에 gene이 없거나 read 수가 부족한 경우
+    if gene not in pattern_dict or len(pattern_dict[gene]) < read_threshold:
         ax.text(0.5, 0.5, f"Not enough reads for {gene}", fontsize=10, ha='center', va='center')
         ax.axis('off')
         return
 
-    # 재현성을 위해 길이와 알파벳 순으로 정렬
-    all_patterns = list(sorted(motif_dict[gene].keys(), key=lambda x: (len(x), x)))
-    
-    # colormap = "Paired"
-    colormap = "Accent"
-    if len(all_patterns) > 12:
-        colormap = "tab20"
-    elif len(all_patterns) > 18:
-        raise ValueError("Too many patterns to display. Please reduce the number of patterns.")
-
-    if colormap == "Accent":
-        pattern_colors = dict(zip(all_patterns, sns.color_palette(colormap, len(all_patterns))))
+    # motif가 없는 경우 처리
+    if gene not in motif_dict or len(motif_dict[gene]) == 0:
+        # motif 없이 회색으로만 표시
+        all_patterns = []
+        pattern_colors = {}
     else:
-        tab20 = sns.color_palette("tab20", 20)
-        filtered_tab20 = [color for i, color in enumerate(tab20) if i not in [14,15]]
-        pattern_colors = dict(zip(all_patterns, filtered_tab20))
+        # 재현성을 위해 길이와 알파벳 순으로 정렬
+        all_patterns = list(sorted(motif_dict[gene].keys(), key=lambda x: (len(x), x)))
+
+        # colormap = "Paired"
+        colormap = "Accent"
+        if len(all_patterns) > 12:
+            colormap = "tab20"
+        elif len(all_patterns) > 18:
+            raise ValueError("Too many patterns to display. Please reduce the number of patterns.")
+
+        if colormap == "Accent":
+            pattern_colors = dict(zip(all_patterns, sns.color_palette(colormap, len(all_patterns))))
+        else:
+            tab20 = sns.color_palette("tab20", 20)
+            filtered_tab20 = [color for i, color in enumerate(tab20) if i not in [14,15]]
+            pattern_colors = dict(zip(all_patterns, filtered_tab20))
 
     gray = sns.color_palette("gray", 1)[0]
 
@@ -290,12 +296,13 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
     ax.set_ylabel("Read Count", fontsize=7)
     ax.set_title(f"{gene} - Pattern Visualization", fontsize=7)
 
-    # Legend 추가
-    legend_elements = [
-        Patch(facecolor=color, label=pattern) for pattern, color in pattern_colors.items()
-    ]
-    ax.legend(handles=legend_elements, title="Pattern",bbox_to_anchor=(1.0,1.0), loc='upper left', ncol=1, frameon=True,
-              fontsize=4, title_fontsize=5)
+    # Legend 추가 (motif가 있을 때만)
+    if len(pattern_colors) > 0:
+        legend_elements = [
+            Patch(facecolor=color, label=pattern) for pattern, color in pattern_colors.items()
+        ]
+        ax.legend(handles=legend_elements, title="Pattern",bbox_to_anchor=(1.0,1.0), loc='upper left', ncol=1, frameon=True,
+                  fontsize=4, title_fontsize=5)
 
     
 
@@ -304,7 +311,8 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
     """
     repeat number histogram을 추가하여 4행 3열로 구성된 PDF 파일을 생성합니다.
     """
-    gene_list = list(motif_dict.keys())
+    # motif가 없는 gene도 포함하기 위해 STR_regions_dict 사용
+    gene_list = list(STR_regions_dict.keys())
 
     output_folder = os.path.join(os.path.dirname(input_file), "gene_panel_output")
     os.makedirs(output_folder, exist_ok=True)
@@ -343,31 +351,57 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
 
 
 if __name__ == "__main__":
+    VERSION = "v1.1.0"
+
+    # Handle --help and --version
+    if len(sys.argv) == 2:
+        if sys.argv[1] == "--help" or sys.argv[1] == "-h":
+            print("STRiker - Short Tandem Repeat Analyzer")
+            print(f"Version: {VERSION}")
+            print()
+            print("Usage: python STRiker.py <csv_file> <fasta_file> <bam_file> [--process N]")
+            print()
+            print("Required Arguments:")
+            print("  csv_file     : CSV file containing STR region information")
+            print("  fasta_file   : Reference genome FASTA file")
+            print("  bam_file     : Input BAM file for analysis")
+            print()
+            print("Optional Arguments:")
+            print("  --process N  : Number of processes for multiprocessing (default: sequential mode)")
+            print("                 When specified, automatically enables parallel processing")
+            print()
+            print("Examples:")
+            print("  # Run in sequential mode")
+            print("  python STRiker.py input.csv ref.fasta input.bam")
+            print()
+            print("  # Run with 4 processes (parallel mode)")
+            print("  python STRiker.py input.csv ref.fasta input.bam --process 4")
+            sys.exit(0)
+        elif sys.argv[1] == "--version" or sys.argv[1] == "-v":
+            print(f"STRiker {VERSION}")
+            sys.exit(0)
 
     # check arguments
-    if len(sys.argv) < 4 or len(sys.argv) > 6:
-        print("Usage: python script.py <csv_file> <fasta_file> <bam_file> [--parallel] [--processes N]")
-        print("  --parallel: Use multiprocessing (default: sequential)")
-        print("  --processes N: Number of processes to use (default: auto-detect)")
+    if len(sys.argv) < 4 or len(sys.argv) > 5:
+        print("Usage: python STRiker.py <csv_file> <fasta_file> <bam_file> [--process N]")
+        print("  Use --help for more information")
         sys.exit(1)
-    
+
     csv_file = sys.argv[1]
     fasta_file = sys.argv[2]
     bam_file = sys.argv[3]
-    
+
     # Parse optional arguments
     use_parallel = False
     num_processes = None
-    
+
     for i in range(4, len(sys.argv)):
-        if sys.argv[i] == "--parallel":
-            use_parallel = True
-        elif sys.argv[i] == "--processes" and i + 1 < len(sys.argv):
+        if sys.argv[i] == "--process" and i + 1 < len(sys.argv):
             try:
                 num_processes = int(sys.argv[i + 1])
-                use_parallel = True  # processes 옵션이 있으면 자동으로 parallel 모드
+                use_parallel = True  # process 옵션이 있으면 자동으로 parallel 모드
             except ValueError:
-                print("Error: --processes must be followed by a valid integer")
+                print("Error: --process must be followed by a valid integer")
                 sys.exit(1)
     
     # File existence checks

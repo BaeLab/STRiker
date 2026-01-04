@@ -88,6 +88,15 @@ The parameters include:
 
 ## 🧬 Usage
 
+### Display Help and Version
+```bash
+# Show help message
+python STRiker.py --help
+
+# Show version
+python STRiker.py --version
+```
+
 ### Basic Usage (Sequential Processing)
 ```bash
 python STRiker.py <loci.csv> <reference.fasta> <bam_file>
@@ -97,19 +106,17 @@ python STRiker.py <loci.csv> <reference.fasta> <bam_file>
 For faster processing with multiprocessing:
 
 ```bash
-# Use multiprocessing with automatic CPU detection
-python STRiker.py <loci.csv> <reference.fasta> <bam_file> --parallel
-
-# Specify the number of processes to use
-python STRiker.py <loci.csv> <reference.fasta> <bam_file> --processes 4
+# Specify the number of processes to use (automatically enables parallel mode)
+python STRiker.py <loci.csv> <reference.fasta> <bam_file> --process 4
 ```
 
 ### Arguments:
 - `<loci.csv>`: CSV file containing gene loci information
 - `<reference.fasta>`: Reference genome FASTA file (e.g., GRCh38)
 - `<bam_file>`: Input BAM file with aligned reads
-- `--parallel`: (Optional) Enable multiprocessing mode
-- `--processes N`: (Optional) Number of processes to use (default: auto-detect, max 8)
+- `--process N`: (Optional) Number of processes to use for multiprocessing (default: sequential mode)
+- `--help`, `-h`: Show help message and exit
+- `--version`, `-v`: Show version information and exit
 
 
 ### Example:
@@ -118,16 +125,25 @@ python STRiker.py <loci.csv> <reference.fasta> <bam_file> --processes 4
 python STRiker.py genes.csv GRCh38.fasta sample.bam
 
 # Parallel processing with 4 cores
-python STRiker.py genes.csv GRCh38.fasta sample.bam --processes 4
+python STRiker.py genes.csv GRCh38.fasta sample.bam --process 4
 ```
 
 ---
 
 ## 🖼 Output
 
-Striker generates two directories in the input folder:
+STRiker generates two directories in the input folder:
 - `gene_panel_output/`: Contains PDF reports and summary files for each gene
 - `motif_results/`: Contains consolidated motif counts and summary statistics in `xlsx` format
+
+### Example Output
+
+![STRiker Output Example](STRiker_output_example.png)
+
+The output includes:
+- **Left panel**: Heatmap visualization of STR motif patterns for each read
+- **Right panel**: Kernel Density Estimation (KDE) plot showing the distribution of read lengths
+
 ---
 
 

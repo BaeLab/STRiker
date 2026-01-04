@@ -294,6 +294,19 @@ def process_gene_motif(gene_data, bam_file, reference_motif_dict):
             elif op == 3: # skip (N)
                 ref_pos += length
             elif op == 4: # soft clipping (S)
+                # Soft-clipped 시퀀스도 start-end 범위 내에 있으면 motif finding 수행
+                if start <= ref_pos <= end and read.query_sequence is not None:
+                    soft_clipped_seq = read.query_sequence[query_pos:query_pos + length]
+                    # motif finding
+                    de_novo_motif = find_consecutive_base_motifs(soft_clipped_seq, min_length=MINIMUM_MOTIF_LENGTH, max_length=MAXIMUM_MOTIF_LENGTH, consecutive_threshold=CONSECUTIVE_THRESHOLD)
+                    if de_novo_motif:
+                        de_novo_motif = filter_keys_by_repetition(de_novo_motif)
+                        # 임시 저장소에 후보 motif들 저장
+                        # 길이 우선 정렬 (긴 motif 우선 처리)
+                        for motif, count in sorted(de_novo_motif.items(), key=lambda x: (-len(x[0]))):
+                            if motif not in temp_motif_candidates:
+                                temp_motif_candidates[motif] = []
+                            temp_motif_candidates[motif].append(count)
                 query_pos += length
             elif op == 5: # hard clipping (H)
                 pass
@@ -345,7 +358,7 @@ def make_motif_dict_parallel(bam_file, STR_regions_dict, depth_dict, reference_m
 
 def make_motif_dict(bam_file, STR_regions_dict, depth_dict, reference_motif_dict) -> Dict[str, Dict[str, List[int]]]:
     """
-    This function takes Sam file handle and returns motif_dict
+    This function takes bam file handle and returns motif_dict
     motif_dict를 만들 때는 range 전체를 span하는 리드만 고려
     수정된 로직: CONSECUTIVE_THRESHOLD를 만족하는 read가 MINIMUM_MOTIF_COVERAGE 이상이어야 motif로 인정
     """
@@ -402,6 +415,17 @@ def make_motif_dict(bam_file, STR_regions_dict, depth_dict, reference_motif_dict
                 elif op == 3: # skip (N)
                     ref_pos += length
                 elif op == 4: # soft clipping (S)
+                    # Soft-clipped 시퀀스도 start-end 범위 내에 있으면 motif finding 수행
+                    if start <= ref_pos <= end and read.query_sequence is not None:
+                        soft_clipped_seq = read.query_sequence[query_pos:query_pos + length]
+                        # motif finding
+                        de_novo_motif = find_consecutive_base_motifs(soft_clipped_seq, min_length=MINIMUM_MOTIF_LENGTH, max_length=MAXIMUM_MOTIF_LENGTH, consecutive_threshold=CONSECUTIVE_THRESHOLD)
+                        if de_novo_motif:
+                            de_novo_motif = filter_keys_by_repetition(de_novo_motif)
+                            # 임시 저장소에 후보 motif들 저장
+                            # 길이 우선 정렬 (긴 motif 우선 처리)
+                            for motif, count in sorted(de_novo_motif.items(), key=lambda x: (-len(x[0]))):
+                                temp_motif_candidates[gene][motif].append(count)
                     query_pos += length
                 elif op == 5: # hard clipping (H)
                     pass

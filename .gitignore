@@ -5,3 +5,4 @@ repeat_motif_test.py
 __pycache__/
 *.py[cod]
 test/
+*_backup.py
