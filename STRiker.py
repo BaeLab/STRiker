@@ -382,7 +382,7 @@ if __name__ == "__main__":
             sys.exit(0)
 
     # check arguments
-    if len(sys.argv) < 4 or len(sys.argv) > 5:
+    if len(sys.argv) < 4 or len(sys.argv) > 6:
         print("Usage: python STRiker.py <csv_file> <fasta_file> <bam_file> [--process N]")
         print("  Use --help for more information")
         sys.exit(1)
