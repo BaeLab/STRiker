@@ -712,7 +712,9 @@ def get_sequence_from_fasta(fasta_path: str, chrom: str, start: int, end: int) -
     # pysam.FastaFile을 사용하면 인덱스(.fai)가 있으면 해당 부분만 읽습니다.
     with pysam.FastaFile(fasta_path) as fasta:
         sequence = fasta.fetch(chrom, start, end)
-    return sequence
+    # CHM13 등 일부 reference는 repeat 영역을 소문자(soft-masking)로 표기한다.
+    # BAM read 서열(대문자)과의 motif 매칭을 위해 대문자로 통일한다.
+    return sequence.upper()
 
 
             
