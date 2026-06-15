@@ -1010,6 +1010,51 @@ def save_debug_info_to_file(output_folder, bam_file, motif_dict, pattern_dict):
 
 
 
+def recompute_reference_total_no_overlap(reference_seq_dict, motif_dict, reference_motif_dict_consc):
+    """Re-derive reference total counts without double-counting shared sequence.
+
+    The original per-motif ``seq.count(motif)`` double-counts sequence shared by
+    overlapping motifs at a locus (e.g. ``TTTC`` is also counted inside every
+    ``TTTCC``). When such per-motif totals are summed to compare against tools
+    that report a single repeat-tract length (HMMSTR mode, Straglr copy_number),
+    STRiker over-estimates. This re-derives the reference total by partitioning
+    the reference window over the gene's *reported* reference motif set with the
+    same greedy longest-match scheme used on reads
+    (:func:`analyze_pattern_occurrencesV6_option1`), so every reference base is
+    attributed to exactly one motif.
+
+    Args:
+        reference_seq_dict: ``{gene: reference window sequence (str)}`` — the
+            ``[start-REFERENCE_LEFT_TRIM, end+REFERENCE_RIGHT_TRIM]`` slice used
+            during reference motif finding.
+        motif_dict: ``{gene: {motif: ...}}`` — the final reported motif set.
+        reference_motif_dict_consc: ``{gene: {motif: count}}`` — reference-type
+            motifs. Only motifs present here get a numeric reference total, so
+            the partition is restricted to them (de novo motifs are sample-only).
+
+    Returns:
+        ``{gene: {motif: total_count}}`` with non-overlapping reference totals.
+
+    Example:
+        >>> seq = "TTTC" * 5 + "TTTCC" + "TTTC" * 5
+        >>> md = {"g": {"TTTC": 1, "TTTCC": 1}}
+        >>> rc = {"g": {"TTTC": 10, "TTTCC": 1}}
+        >>> recompute_reference_total_no_overlap({"g": seq}, md, rc)["g"]
+        {'TTTCC': 1, 'TTTC': 10}
+    """
+    result = {}
+    for gene, motifs in motif_dict.items():
+        seq = reference_seq_dict.get(gene)
+        ref_consc = reference_motif_dict_consc.get(gene, {})
+        ref_motifs = [m for m in motifs.keys() if m in ref_consc]
+        if not seq or not ref_motifs:
+            result[gene] = {}
+            continue
+        partition = analyze_pattern_occurrencesV6_option1(seq, ref_motifs)
+        result[gene] = analyze_pattern_total_occurences(partition, ref_motifs)
+    return result
+
+
 def analyze_pattern_total_occurences(pattern_list: list, motifs: list) -> List[Tuple[str, int]]:
     """
     read_seq에서 motifs에 있는 motif들이 몇 번 등장하는지 반환

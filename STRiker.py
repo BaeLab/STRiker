@@ -1,10 +1,12 @@
-# TODO motif 등장횟수 중복으로 count되는지 확인
-# 예를 들어서 GAA가 100번, AAG가 100번 등장하면, 각각 100번씩 등장하는지 확인
+# RESOLVED (2026-06-15) reference total count 중복 계산 수정:
+#   기존 seq.count(motif)는 서열 공유 motif(예: TTTC ⊂ TTTCC)를 중복으로 셌음.
+#   process_gene_reference_motif에서 greedy partition 기반으로 변경 (sample 경로와 일관).
 from collections import defaultdict
 import analyze_func_pysam
 from config import *
+import argparse
 import sys
-import os 
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
@@ -73,24 +75,30 @@ def process_gene_reference_motif(gene_data, fasta_file):
     # Reference motif dictionary에 저장
     reference_motif_dict_consc = {}
     reference_motif_dict_total = {}
-    
+
     # 길이 우선 정렬 (긴 motif 우선 처리)
+    # NOTE: 여기의 total(seq.count)은 서열 공유 motif를 중복 계산한다. 최종 보고 전
+    #       motif_dict 확정 후 recompute_reference_total_no_overlap로 덮어쓴다(main_*).
     for motif, count in sorted(consecutive_substrings.items(), key=lambda x: (-len(x[0]), -x[1], x[0])):
         reference_motif_dict_consc[motif] = count
         reference_motif_dict_total[motif] = seq.count(motif)
-    
-    return gene, reference_motif_dict_consc, reference_motif_dict_total
+
+    # reference 윈도우 서열을 함께 반환 → motif_dict 확정 후 중복 없는 total 재계산에 사용
+    return gene, reference_motif_dict_consc, reference_motif_dict_total, seq
 
 
-def main_parallel(bam_file, csv_file, fasta_file, num_processes=None):
+def main_parallel(bam_file, csv_file, fasta_file, num_processes=None, output_dir=None):
     """
     multiprocessing을 사용하는 메인 함수
     """
     if num_processes is None:
         num_processes = min(mp.cpu_count(), 8)  # 최대 8개 프로세스 사용
-    
-    # motif_results라는 폴더 없으면 생성
-    motif_results_folder = os.path.join(os.path.dirname(bam_file), "motif_results")
+
+    # 결과물은 output_dir 아래에 생성 (raw data 폴더 오염 방지).
+    # output_dir 미지정 시 기존 동작(BAM 폴더) 유지.
+    if output_dir is None:
+        output_dir = os.path.dirname(os.path.abspath(bam_file))
+    motif_results_folder = os.path.join(output_dir, "motif_results")
     os.makedirs(motif_results_folder, exist_ok=True)
     
     # CSV 파일에서 데이터를 읽어옴
@@ -103,27 +111,34 @@ def main_parallel(bam_file, csv_file, fasta_file, num_processes=None):
 
     reference_motif_dict_consc = defaultdict(dict)
     reference_motif_dict_total = defaultdict(dict)
-    
+    reference_seq_dict = {}
+
     # GRCh38 reference genome에서 tandem repeat motif를 찾음. (병렬처리)
     print(f"Processing reference motifs with {num_processes} processes...")
     with mp.Pool(processes=num_processes) as pool:
         gene_data_list = list(STR_regions_dict.items())
         process_gene_func = partial(process_gene_reference_motif, fasta_file=fasta_file)
         results = pool.map(process_gene_func, gene_data_list)
-    
+
     # 결과를 딕셔너리로 변환
-    for gene, ref_consc, ref_total in results:
+    for gene, ref_consc, ref_total, seq in results:
         reference_motif_dict_consc[gene] = ref_consc
         reference_motif_dict_total[gene] = ref_total
-    
+        reference_seq_dict[gene] = seq
+
     # motif dict만들기, 여기서의 motif_dict에 reference motif도 포함되어 있음
     print("Creating motif dictionary...")
     motif_dict = analyze_func_pysam.make_motif_dict_parallel(bam_file, STR_regions_dict, depth_dict, reference_motif_dict_consc, num_processes)
-    
+
     # motif_dict는 {gene: {motif: [count, ...], ...}, ...} 형태
     motif_dict = analyze_func_pysam.filter_motif_dict(motif_dict, reference_motif_dict_consc)
     # motif중에 known_motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
     motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
+
+    # reference total을 중복 없이 재계산 (서열 공유 motif의 이중 카운트 제거). 보고되는
+    # reference motif set 기준 greedy partition → sample 경로와 동일한 척도.
+    reference_motif_dict_total = analyze_func_pysam.recompute_reference_total_no_overlap(
+        reference_seq_dict, motif_dict, reference_motif_dict_consc)
 
     print("Creating pattern dictionary...")
     pattern_dict, consecutive_repeat_results, total_repeat_results = analyze_func_pysam.make_pattern_dict_parallel(bam_file, STR_regions_dict, motif_dict, num_processes)
@@ -139,9 +154,12 @@ def main_parallel(bam_file, csv_file, fasta_file, num_processes=None):
     return (pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results)
 
 
-def main_sequential(bam_file, csv_file, fasta_file):
-    # motif_results라는 폴더 없으면 생성
-    motif_results_folder = os.path.join(os.path.dirname(bam_file), "motif_results")
+def main_sequential(bam_file, csv_file, fasta_file, output_dir=None):
+    # 결과물은 output_dir 아래에 생성 (raw data 폴더 오염 방지).
+    # output_dir 미지정 시 기존 동작(BAM 폴더) 유지.
+    if output_dir is None:
+        output_dir = os.path.dirname(os.path.abspath(bam_file))
+    motif_results_folder = os.path.join(output_dir, "motif_results")
     os.makedirs(motif_results_folder, exist_ok=True)
     motif_dict = defaultdict(lambda: defaultdict(list))
     # CSV 파일에서 데이터를 읽어옴
@@ -154,7 +172,8 @@ def main_sequential(bam_file, csv_file, fasta_file):
 
     reference_motif_dict_consc = defaultdict(dict)
     reference_motif_dict_total = defaultdict(dict)
-    
+    reference_seq_dict = {}
+
     # GRCh38 reference genome에서 tandem repeat motif를 찾음.
     for gene in STR_regions_dict.keys():
         patho_start = STR_regions_dict[gene]["start"]
@@ -162,6 +181,7 @@ def main_sequential(bam_file, csv_file, fasta_file):
         chrom = STR_regions_dict[gene]["chrom"]
 
         seq = analyze_func_pysam.get_sequence_from_fasta(fasta_file, chrom, patho_start-REFERENCE_LEFT_TRIM, patho_end + REFERENCE_RIGHT_TRIM)
+        reference_seq_dict[gene] = seq
         # consecutive_substrings = analyze_func.find_consecutive_repeated_substrings_with_rotation_optimized_v2(seq, min_length=3, max_length=30, consecutive_threshold=3)
         consecutive_substrings = analyze_func_pysam.find_consecutive_base_motifs(seq,
                                                                                     min_length=REFERENCE_MINIMUM_MOTIF_LENGTH,
@@ -202,6 +222,10 @@ def main_sequential(bam_file, csv_file, fasta_file):
     motif_dict = analyze_func_pysam.filter_motif_dict(motif_dict, reference_motif_dict_consc)
     # motif중에 known_motif와 회전해서 일치하는 motif가 있다면 해당 motif를 사용한다.
     motif_dict = analyze_func_pysam.apply_known_motif_v2(motif_dict, STR_regions_dict)
+
+    # reference total을 중복 없이 재계산 (서열 공유 motif의 이중 카운트 제거).
+    reference_motif_dict_total = analyze_func_pysam.recompute_reference_total_no_overlap(
+        reference_seq_dict, motif_dict, reference_motif_dict_consc)
 
     # custom motif 처리
 
@@ -307,14 +331,19 @@ def plot_pattern(ax, pattern_dict, motif_dict, gene, read_threshold):
     
 
 
-def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regions_dict, input_file, read_threshold=5):
+def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regions_dict, input_file, read_threshold=5, output_dir=None):
     """
     repeat number histogram을 추가하여 4행 3열로 구성된 PDF 파일을 생성합니다.
+
+    PDF는 output_dir/gene_panel_output/ 아래에 저장된다. output_dir 미지정 시
+    기존 동작(input_file 폴더)을 유지한다. 파일명은 input_file의 basename을 사용.
     """
     # motif가 없는 gene도 포함하기 위해 STR_regions_dict 사용
     gene_list = list(STR_regions_dict.keys())
 
-    output_folder = os.path.join(os.path.dirname(input_file), "gene_panel_output")
+    if output_dir is None:
+        output_dir = os.path.dirname(os.path.abspath(input_file))
+    output_folder = os.path.join(output_dir, "gene_panel_output")
     os.makedirs(output_folder, exist_ok=True)
 
     rows, cols = 4, 2
@@ -350,88 +379,87 @@ def save_gene_plots_with_heatmap_v2(pattern_dict, motif_dict, bam_file, STR_regi
 
 
 
+VERSION = "v1.2.0"
+
+
+def parse_args(argv=None):
+    """Parse STRiker command-line arguments.
+
+    Returns:
+        argparse.Namespace with: csv_file, fasta_file, bam_file (paths),
+        output (output directory), process (int or None for sequential mode).
+    """
+    class _Formatter(argparse.ArgumentDefaultsHelpFormatter,
+                     argparse.RawDescriptionHelpFormatter):
+        # show argument defaults, but keep the epilog examples verbatim
+        pass
+
+    parser = argparse.ArgumentParser(
+        prog="STRiker.py",
+        description=(
+            "STRiker - Short Tandem Repeat analyzer for nanopore BAMs.\n"
+            "Finds reference + de novo motifs and calls per-allele repeat length\n"
+            "from read-length KDE; writes a motif xlsx, a coverage report, and a\n"
+            "per-gene panel PDF."
+        ),
+        formatter_class=_Formatter,
+        epilog="Examples:\n"
+               "  # sequential, results into ./striker_out\n"
+               "  python STRiker.py regions.csv ref.fa input.bam -o striker_out\n\n"
+               "  # 8 processes\n"
+               "  python STRiker.py regions.csv ref.fa input.bam -o striker_out -p 8",
+    )
+    parser.add_argument("csv_file",
+                        help="CSV of STR regions (chr,start,end,motif).")
+    parser.add_argument("fasta_file",
+                        help="Reference genome FASTA (indexed; uppercase recommended).")
+    parser.add_argument("bam_file",
+                        help="Input BAM aligned to the reference.")
+    parser.add_argument("-o", "--output", default=".",
+                        help="Output directory for all results "
+                             "(motif_results/ and gene_panel_output/ are created "
+                             "inside). Keeps results out of the raw-data folder.")
+    parser.add_argument("-p", "--process", type=int, default=None, metavar="N",
+                        help="Number of processes for multiprocessing. "
+                             "If omitted, runs sequentially.")
+    parser.add_argument("-v", "--version", action="version",
+                        version=f"STRiker {VERSION}")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    VERSION = "v1.1.0"
+    args = parse_args()
+    csv_file, fasta_file, bam_file = args.csv_file, args.fasta_file, args.bam_file
+    output_dir = args.output
+    num_processes = args.process
 
-    # Handle --help and --version
-    if len(sys.argv) == 2:
-        if sys.argv[1] == "--help" or sys.argv[1] == "-h":
-            print("STRiker - Short Tandem Repeat Analyzer")
-            print(f"Version: {VERSION}")
-            print()
-            print("Usage: python STRiker.py <csv_file> <fasta_file> <bam_file> [--process N]")
-            print()
-            print("Required Arguments:")
-            print("  csv_file     : CSV file containing STR region information")
-            print("  fasta_file   : Reference genome FASTA file")
-            print("  bam_file     : Input BAM file for analysis")
-            print()
-            print("Optional Arguments:")
-            print("  --process N  : Number of processes for multiprocessing (default: sequential mode)")
-            print("                 When specified, automatically enables parallel processing")
-            print()
-            print("Examples:")
-            print("  # Run in sequential mode")
-            print("  python STRiker.py input.csv ref.fasta input.bam")
-            print()
-            print("  # Run with 4 processes (parallel mode)")
-            print("  python STRiker.py input.csv ref.fasta input.bam --process 4")
-            sys.exit(0)
-        elif sys.argv[1] == "--version" or sys.argv[1] == "-v":
-            print(f"STRiker {VERSION}")
-            sys.exit(0)
-
-    # check arguments
-    if len(sys.argv) < 4 or len(sys.argv) > 6:
-        print("Usage: python STRiker.py <csv_file> <fasta_file> <bam_file> [--process N]")
-        print("  Use --help for more information")
-        sys.exit(1)
-
-    csv_file = sys.argv[1]
-    fasta_file = sys.argv[2]
-    bam_file = sys.argv[3]
-
-    # Parse optional arguments
-    use_parallel = False
-    num_processes = None
-
-    for i in range(4, len(sys.argv)):
-        if sys.argv[i] == "--process" and i + 1 < len(sys.argv):
-            try:
-                num_processes = int(sys.argv[i + 1])
-                use_parallel = True  # process 옵션이 있으면 자동으로 parallel 모드
-            except ValueError:
-                print("Error: --process must be followed by a valid integer")
-                sys.exit(1)
-    
     # File existence checks
-    if not os.path.exists(bam_file):
-        print(f"Error: BAM file {bam_file} does not exist.")
-        sys.exit(1)
-    if not os.path.exists(fasta_file):
-        print(f"Error: FASTA file {fasta_file} does not exist.")
-        sys.exit(1)
-    if not os.path.exists(csv_file):
-        print(f"Error: CSV file {csv_file} does not exist.")
-        sys.exit(1)
+    for label, path in (("BAM", bam_file), ("FASTA", fasta_file), ("CSV", csv_file)):
+        if not os.path.exists(path):
+            print(f"Error: {label} file {path} does not exist.")
+            sys.exit(1)
+
+    os.makedirs(output_dir, exist_ok=True)
 
     # Run analysis
-    if use_parallel:
-        print("Running analysis with multiprocessing...")
-        pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results = main_parallel(bam_file, csv_file, fasta_file, num_processes)
+    if num_processes is not None:
+        print(f"Running analysis with multiprocessing ({num_processes} processes)...")
+        pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results = main_parallel(
+            bam_file, csv_file, fasta_file, num_processes, output_dir=output_dir)
     else:
         print("Running analysis sequentially...")
-        pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results = main_sequential(bam_file, csv_file, fasta_file)
-    
+        pattern_dict, motif_dict, consecutive_repeat_results, total_repeat_results = main_sequential(
+            bam_file, csv_file, fasta_file, output_dir=output_dir)
+
     STR_regions_dict, _ = load_csv_data(csv_file)
-    
+
     print("Generating plots...")
-    output_folder = os.path.dirname(bam_file)
     save_gene_plots_with_heatmap_v2(
         pattern_dict,
         motif_dict,
         bam_file=bam_file,
         STR_regions_dict=STR_regions_dict,
-        input_file=bam_file
+        input_file=bam_file,
+        output_dir=output_dir
     )
-    print("Analysis completed!")
+    print(f"Analysis completed! Results in: {os.path.abspath(output_dir)}")
