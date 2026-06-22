@@ -99,7 +99,7 @@ python STRiker.py --version
 
 ### Basic Usage (Sequential Processing)
 ```bash
-python STRiker.py <loci.csv> <reference.fasta> <bam_file>
+python STRiker.py <loci.csv> <reference.fasta> <bam_file> -o <output_dir>
 ```
 
 ### Multiprocessing Usage (Parallel Processing)
@@ -107,32 +107,37 @@ For faster processing with multiprocessing:
 
 ```bash
 # Specify the number of processes to use (automatically enables parallel mode)
-python STRiker.py <loci.csv> <reference.fasta> <bam_file> --process 4
+python STRiker.py <loci.csv> <reference.fasta> <bam_file> -o <output_dir> -p 4
 ```
 
 ### Arguments:
-- `<loci.csv>`: CSV file containing gene loci information
-- `<reference.fasta>`: Reference genome FASTA file (e.g., GRCh38)
-- `<bam_file>`: Input BAM file with aligned reads
-- `--process N`: (Optional) Number of processes to use for multiprocessing (default: sequential mode)
-- `--help`, `-h`: Show help message and exit
-- `--version`, `-v`: Show version information and exit
+- `<loci.csv>`: CSV file containing gene loci information (required)
+- `<reference.fasta>`: Reference genome FASTA file, e.g., GRCh38 (required, indexed)
+- `<bam_file>`: Input BAM file with aligned reads (required)
+- `-o`, `--output DIR`: (Optional) Output directory for all results. `motif_results/`
+  and `gene_panel_output/` are created inside it, keeping results out of the
+  raw-data folder. Default: current directory (`.`)
+- `-p`, `--process N`: (Optional) Number of processes to use for multiprocessing.
+  If omitted, runs in sequential mode.
+- `-h`, `--help`: Show help message and exit
+- `-v`, `--version`: Show version information and exit
 
 
 ### Example:
 ```bash
-# Sequential processing
-python STRiker.py genes.csv GRCh38.fasta sample.bam
+# Sequential processing, results into ./striker_out
+python STRiker.py genes.csv GRCh38.fasta sample.bam -o striker_out
 
-# Parallel processing with 4 cores
-python STRiker.py genes.csv GRCh38.fasta sample.bam --process 4
+# Parallel processing with 8 cores
+python STRiker.py genes.csv GRCh38.fasta sample.bam -o striker_out -p 8
 ```
 
 ---
 
 ## 🖼 Output
 
-STRiker generates two directories in the input folder:
+STRiker generates two directories inside the output directory specified by `-o`
+(default: current directory):
 - `gene_panel_output/`: Contains PDF reports and summary files for each gene
 - `motif_results/`: Contains consolidated motif counts and summary statistics in `xlsx` format
 
